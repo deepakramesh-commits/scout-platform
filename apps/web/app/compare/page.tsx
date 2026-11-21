@@ -7,7 +7,7 @@ import type { SelectorSection } from "@astryxdesign/core/Selector";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { sql } from "@/lib/db";
-import { grouped, label, ROLE_NAMES } from "@/lib/metrics";
+import { fmtMetric, grouped, label, LOWER_IS_BETTER, ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import { flag, PctBar, PlayerAvatar } from "../ui";
 import { Pickers } from "./pickers";
@@ -16,7 +16,7 @@ import { PercentileRadar } from "./radar";
 export const dynamic = "force-dynamic";
 
 type Option = { id: string; display_name: string; role: string };
-type Side = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number>; percentiles: Record<string, number> };
+type Side = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
 
 const SERIES = { a: "var(--color-data-categorical-teal)", b: "var(--color-data-categorical-orange)" };
 
@@ -75,6 +75,12 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
   );
 
   const groups = a && b ? grouped(Object.keys(a.per90)) : [];
+  // The radar reads "further out is better", so it leaves out lower-is-better metrics and any metric either player lacks.
+  const radar = a && b
+    ? groups.flatMap(([, ks]) => ks)
+        .filter((k) => !LOWER_IS_BETTER.has(k) && a.percentiles[k] != null && b.percentiles[k] != null)
+        .map((k) => ({ metric: label(k), a: a.percentiles[k], b: b.percentiles[k] }))
+    : [];
 
   return (
     <VStack gap={6}>
@@ -101,8 +107,8 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
             <Card>
               <VStack gap={2}>
                 <Heading level={3}>Percentile shape</Heading>
-                <Text type="supporting">All {groups.reduce((n, [, ks]) => n + ks.length, 0)} measures, clockwise from attacking to defending. Further out is better.</Text>
-                <PercentileRadar colors={SERIES} data={groups.flatMap(([, ks]) => ks).map((k) => ({ metric: label(k), a: a.percentiles[k] ?? 0, b: b.percentiles[k] ?? 0 }))} />
+                <Text type="supporting">{radar.length} measures both players have, clockwise from attacking to defending. Further out is better.</Text>
+                <PercentileRadar colors={SERIES} data={radar} />
               </VStack>
             </Card>
 
@@ -115,15 +121,17 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
                     <VStack key={g} gap={1}>
                       <Text type="label" color="secondary" display="block" justify="center">{g}</Text>
                       {ks.map((k, ri) => {
-                        const [va, vb] = [a.per90[k] ?? 0, b.per90[k] ?? 0];
+                        const [va, vb] = [a.per90[k], b.per90[k]];
+                        const better = (x: number | null, y: number | null) =>
+                          x != null && (y == null || (LOWER_IS_BETTER.has(k) ? x < y : x > y));
                         const slot = { "--i": before + ri } as React.CSSProperties;
                         return (
                           <Grid key={k} className="cmp" gap={2}>
-                            <Text weight="bold" hasTabularNumbers className={va > vb ? "win" : undefined} style={slot}>{va.toFixed(2)}</Text>
-                            <PctBar pct={a.percentiles[k]} flip i={before + ri} />
+                            <Text weight="bold" hasTabularNumbers className={better(va, vb) ? "win" : undefined} style={slot}>{fmtMetric(k, va)}</Text>
+                            <PctBar lowerIsBetter={LOWER_IS_BETTER.has(k)} pct={a.percentiles[k]} flip i={before + ri} />
                             <Text type="supporting" display="block" justify="center" maxLines={1}>{label(k)}</Text>
-                            <PctBar pct={b.percentiles[k]} i={before + ri} />
-                            <Text weight="bold" hasTabularNumbers display="block" justify="end" className={vb > va ? "win" : undefined} style={slot}>{vb.toFixed(2)}</Text>
+                            <PctBar lowerIsBetter={LOWER_IS_BETTER.has(k)} pct={b.percentiles[k]} i={before + ri} />
+                            <Text weight="bold" hasTabularNumbers display="block" justify="end" className={better(vb, va) ? "win" : undefined} style={slot}>{fmtMetric(k, vb)}</Text>
                           </Grid>
                         );
                       })}
@@ -131,7 +139,7 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
                   );
                 })}
                 <Divider />
-                <Text type="supporting">Bars are percentiles; the green figure is the higher per-90 value.</Text>
+                <Text type="supporting">Bars are percentiles; figures are per 90 minutes, or a share of attempts where marked %. The green figure is the better one (fewer, for ball losses). “–” means too few attempts to judge.</Text>
               </VStack>
             </Card>
           </Grid>

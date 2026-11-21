@@ -20,7 +20,7 @@ const mark = (
   </svg>
 );
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, subheading }: { children: React.ReactNode; subheading: string }) {
   const path = usePathname();
   return (
     <Theme theme={themes[defaultThemeSlug]} mode="dark">
@@ -32,11 +32,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
           topNav={
             <TopNav
               label="Scout"
-              heading={<TopNavHeading heading="Scout" subheading="AFCON 2023" headingHref="/" logo={<NavIcon icon={mark} />} />}
+              heading={<TopNavHeading heading="Scout" subheading={subheading} headingHref="/" logo={<NavIcon icon={mark} />} />}
               startContent={
                 <>
                   <TopNavItem label="Search" href="/" isSelected={path === "/" || path.startsWith("/players")} />
+                  <TopNavItem label="Find by role" href="/roles" isSelected={path.startsWith("/roles")} />
                   <TopNavItem label="Compare" href="/compare" isSelected={path.startsWith("/compare")} />
+                  <TopNavItem label="Profiles" href="/profiles" isSelected={path.startsWith("/profiles")} />
                 </>
               }
             />

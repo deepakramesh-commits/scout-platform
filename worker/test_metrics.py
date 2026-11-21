@@ -180,3 +180,15 @@ def test_value_metric_is_per90_by_role_and_ranked():
     out = add_value_metric(res, lineups([("a", "CM", 90), ("b", "CM", 45)]), per_match, "xt").set_index("player_id")
     assert out.loc["a", "per90"]["xt"] == 0.2 and out.loc["b", "per90"]["xt"] == 0.4
     assert out.loc["b", "percentiles"]["xt"] == 100 and out.loc["a", "percentiles"]["xt"] == 50
+
+
+def test_a_measure_most_of_the_position_never_records_gives_no_attribute_evidence():
+    from metrics import attribute_percentiles
+    out = pd.DataFrame([
+        {"role": "GK", "percentiles": {"dribbles_completed": 100, "saves": 40}, "per90": {"dribbles_completed": 0.2, "saves": 2.0}},
+        {"role": "GK", "percentiles": {"dribbles_completed": 50, "saves": 90}, "per90": {"dribbles_completed": 0.0, "saves": 3.5}},
+        {"role": "GK", "percentiles": {"dribbles_completed": 50, "saves": 60}, "per90": {"dribbles_completed": 0.0, "saves": 2.5}},
+    ])
+    res = attribute_percentiles(out, {"dribbling": ["dribbles_completed"], "shot_stopping": ["saves"]})
+    assert all("dribbling" not in r for r in res)
+    assert [r["shot_stopping"] for r in res] == [33, 100, 67]

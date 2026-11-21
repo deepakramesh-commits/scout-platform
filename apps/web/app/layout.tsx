@@ -2,11 +2,17 @@ import type { Metadata } from "next";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "./motion.css";
+import { sql } from "@/lib/db";
 import { Shell } from "./shell";
 
 export const metadata: Metadata = { title: "Scout · African football talent" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+// The nav names the competitions in the database, so it is rendered per request like every page.
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const [{ names }] = await sql<{ names: string | null }[]>`
+    select string_agg(name || ' ' || season, ' · ' order by season desc, name) as names from competitions`;
   return (
     <html lang="en">
       <head>
@@ -16,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..800&display=swap" />
       </head>
       <body>
-        <Shell>{children}</Shell>
+        <Shell subheading={names ?? "No competitions loaded"}>{children}</Shell>
       </body>
     </html>
   );

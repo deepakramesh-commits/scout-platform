@@ -2,6 +2,8 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Badge } from "@astryxdesign/core/Badge";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
+import { smallGroupNote } from "@/lib/metrics";
 import { PitchPlayer } from "./pitch-player";
 
 // Team names as StatsBomb spells them. Player nationality is unreliable (dual nationals show as France/Spain), so flags follow the team.
@@ -38,10 +40,11 @@ export function PctBadge({ pct }: { pct: number | null | undefined }) {
 type Vars = React.CSSProperties & Record<`--${string}`, string | number>;
 
 // `i` is the stagger slot; bars and counts with the same slot animate together.
-export function PctBar({ pct, flip = false, i = 0 }: { pct: number | null | undefined; flip?: boolean; i?: number }) {
+// `lowerIsBetter`: the bar still measures the percentile, but its colour says how good that is.
+export function PctBar({ pct, flip = false, i = 0, lowerIsBetter = false }: { pct: number | null | undefined; flip?: boolean; i?: number; lowerIsBetter?: boolean }) {
   return (
     <span className={`pbar${flip ? " flip" : ""}`}>
-      <span className={tier(pct)} style={{ transform: `scaleX(${(pct ?? 0) / 100})`, "--i": i } as Vars} />
+      <span className={tier(pct == null || !lowerIsBetter ? pct : 100 - pct)} style={{ transform: `scaleX(${(pct ?? 0) / 100})`, "--i": i } as Vars} />
     </span>
   );
 }
@@ -49,6 +52,23 @@ export function PctBar({ pct, flip = false, i = 0 }: { pct: number | null | unde
 export function Count({ value, i = 0, suffix }: { value: number | null | undefined; i?: number; suffix?: string }) {
   return value == null ? <>–</> : (
     <span className="count" data-suffix={suffix} style={{ "--v": value, "--i": i } as Vars} aria-label={`${value}${suffix ?? ""}`} />
+  );
+}
+
+/** Next to any value that comes from demo data. Never present demo as real. */
+export function Demo() {
+  return <Token size="sm" label="Demo" color="orange" description="Demo value, not measured" />;
+}
+
+/** Standout qualities as attribute labels, with the small-group caveat when the ranking rests on few peers. */
+export function Standouts({ keys, labels, peers, role }: { keys: string[]; labels: Record<string, string>; peers: number; role: string }) {
+  if (!keys.length) return <Text type="supporting">–</Text>;
+  const note = smallGroupNote(peers, role);
+  return (
+    <HStack gap={1} wrap="wrap" vAlign="center">
+      {keys.map((k) => <Token key={k} size="sm" color="green" label={labels[k] ?? k} />)}
+      {note && <Text type="supporting" size="xsm">{note}</Text>}
+    </HStack>
   );
 }
 

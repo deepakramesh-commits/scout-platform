@@ -207,6 +207,10 @@ def main():
             "period=excluded.period, video_seconds=excluded.video_seconds, type=excluded.type, outcome=excluded.outcome, "
             "x=excluded.x, y=excluded.y, end_x=excluded.end_x, end_y=excluded.end_y, body_part=excluded.body_part, extra=excluded.extra",
             events)
+        cur.execute(
+            "insert into squad_members (team_id, player_id, shirt_number) "
+            "select distinct on (team_id, player_id) team_id, player_id, shirt_number from lineups "
+            "where match_id = any(%s) order by team_id, player_id on conflict do nothing", ([m[0] for m in matches],))
     for name, rows in [("competitions", competition), ("teams", teams), ("players", player_rows),
                        ("matches", matches), ("lineups", lineups), ("events", events)]:
         print(f"{name}: {len(rows)} upserted")

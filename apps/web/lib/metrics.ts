@@ -1,16 +1,39 @@
 // The Python registry owns the keys; labels are derived so there is one source of truth.
 export const label = (key: string) =>
-  key === "xg" ? "xG" : key === "cut_ins" ? "Cut-ins" : key.charAt(0).toUpperCase() + key.slice(1).replaceAll("_", " ");
+  key === "xg" ? "xG" : key === "xt" ? "xT" : key === "cut_ins" ? "Cut-ins"
+    : (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_pct$/, "").replaceAll("_", " ");
 
 export const metricKeys = async (sql: import("postgres").Sql) =>
   (await sql<{ key: string }[]>`select distinct jsonb_object_keys(per90) as key from player_season_metrics order by 1`).map((r) => r.key);
 
 // Presentation grouping only; keys missing here land in "Other" so a new Python metric still shows up.
 export const GROUPS: [string, string[]][] = [
-  ["Attacking", ["shots", "xg", "key_passes", "crosses", "cut_ins", "dribbles_completed"]],
-  ["Possession", ["touches", "passes", "passes_completed", "progressive_passes", "carries", "progressive_carries"]],
-  ["Defending", ["ball_recoveries", "interceptions", "tackles_won", "duels_won"]],
+  ["Attacking", ["goals", "shots", "shots_on_target", "xg", "first_time_shots", "assists", "key_passes", "through_balls_received",
+    "receptions_in_box", "crosses", "cut_ins", "dribbles_completed", "dribble_success_pct"]],
+  ["Possession", ["touches", "passes", "passes_completed", "pass_accuracy_pct", "long_passes", "progressive_passes", "carries",
+    "progressive_carries", "first_touch_under_pressure_pct", "ball_losses", "xt"]],
+  ["Defending", ["pressures", "ball_recoveries", "interceptions", "tackles_won", "tackle_success_pct", "duels_won", "aerial_duels_won", "blocks"]],
+  ["Goalkeeping", ["saves", "crosses_claimed"]],
 ];
+
+/** Metrics where a smaller number is the better one. Their percentiles still rank the raw count, high = many. */
+export const LOWER_IS_BETTER = new Set(["ball_losses"]);
+
+const isShare = (key: string) => key.endsWith("_pct");
+
+/** Unit shown after a value: `_pct` keys are shares of attempts (0 to 100), everything else is per 90 minutes. */
+export const unit = (key: string) => (isShare(key) ? "%" : "/ 90");
+
+/** The one way a metric value is printed. A share is empty when there were too few attempts to judge. */
+export const fmtMetric = (key: string, v: number | null | undefined) =>
+  v == null ? "–" : isShare(key) ? `${Math.round(v)}%` : v.toFixed(2);
+
+/** Value with its unit, for prose: "62%", "1.23 / 90". */
+export const fmtWithUnit = (key: string, v: number | null | undefined) =>
+  v == null || isShare(key) ? fmtMetric(key, v) : `${fmtMetric(key, v)} / 90`;
+
+/** Metric label with the direction spelled out where lower is better. */
+export const metricLabel = (key: string) => (LOWER_IS_BETTER.has(key) ? `${label(key)} (lower is better)` : label(key));
 
 export const grouped = (keys: string[]): [string, string[]][] => {
   const known = new Set(GROUPS.flatMap(([, ks]) => ks));
@@ -23,6 +46,13 @@ export const ROLE_NAMES: Record<string, string> = {
   GK: "Goalkeeper", CB: "Centre-back", FB: "Full-back", DM: "Defensive midfielder", CM: "Central midfielder",
   AM: "Attacking midfielder", LW: "Left winger", RW: "Right winger", ST: "Striker",
 };
+
+export const rolePlural = (role: string) => `${(ROLE_NAMES[role] ?? role).toLowerCase()}s`;
+
+/** Rankings resting on fewer peers than this are flagged on screen. */
+export const SMALL_GROUP = 10;
+export const smallGroupNote = (peers: number, role: string) =>
+  peers > 0 && peers < SMALL_GROUP ? `ranked among only ${peers} ${rolePlural(role)}` : null;
 
 export const PRESETS = [
   { title: "Right wingers who cut inside", blurb: "Carries from the right flank into the half-space", role: "RW", sort: "cut_ins" },

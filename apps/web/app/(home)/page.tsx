@@ -10,19 +10,26 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { sql } from "@/lib/db";
-import { label, metricKeys, PRESETS, ROLE_NAMES } from "@/lib/metrics";
+import type { ISODateString } from "@astryxdesign/core/Calendar";
+import { standouts } from "@/lib/fit";
+import { fmtMetric, fmtWithUnit, label, LOWER_IS_BETTER, metricKeys, metricLabel, PRESETS, ROLE_NAMES, unit } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
+import { getAttributes, SEASON_YEAR } from "@/lib/scouting";
 import { Filters } from "./filters";
-import { Count, flag, PctBadge, PlayerAvatar } from "../ui";
+import { Count, Demo, flag, PctBadge, PlayerAvatar, Standouts } from "../ui";
 
 export const dynamic = "force-dynamic";
 
-type Row = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; value: number | null; pct: number | null };
+type Row = {
+  id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number;
+  value: number | null; pct: number | null; peers: number; attr_percentiles: Record<string, number>;
+};
 type Kpis = { players: number; matches: number; nations: number; events: number; qualified: number };
-type Featured = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number>; percentiles: Record<string, number> };
+type Featured = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 const int = (v: string | undefined) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : null);
+const isIsoDate = (v: string | undefined): v is ISODateString => v !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
 
 // The featured prospect is the leader of the first preset, so it always matches a list the scout can open.
 const FEATURED = PRESETS[0];
@@ -30,7 +37,12 @@ const FEATURED = PRESETS[0];
 export default async function Search({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const q = await searchParams;
   const keys = await metricKeys(sql);
-  const roles = (await sql<{ role: string }[]>`select distinct role from player_season_metrics order by 1`).map((r) => r.role);
+  const [roles, countries, attributes] = await Promise.all([
+    sql<{ role: string }[]>`select distinct role from player_season_metrics order by 1`.then((rs) => rs.map((r) => r.role)),
+    sql<{ c: string }[]>`select distinct nationality as c from players where nationality is not null and visible_to_scouts order by 1`.then((rs) => rs.map((r) => r.c)),
+    getAttributes(),
+  ]);
+  const attrLabels = Object.fromEntries(attributes.map((a) => [a.key, a.label]));
 
   const requested = first(q.sort);
   const sort = requested && keys.includes(requested) ? requested : keys.includes("cut_ins") ? "cut_ins" : keys[0];
@@ -38,6 +50,12 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   const name = first(q.name) ?? null;
   const minPct = int(first(q.minPct));
   const minMinutes = int(first(q.minMinutes)) ?? 0;
+  const country = countries.includes(first(q.country) ?? "") ? first(q.country)! : null;
+  const ageMin = int(first(q.ageMin));
+  const ageMax = int(first(q.ageMax));
+  const by = first(q.contractBy);
+  const contractBy = isIsoDate(by) ? by : null;
+  const ascending = LOWER_IS_BETTER.has(sort);
 
   const [[kpi], [featured], rows] = await Promise.all([
     sql<Kpis[]>`
@@ -58,17 +76,22 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
     sort
       ? sql<Row[]>`
           select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes,
-                 (m.per90 ->> ${sort})::float8 as value, (m.percentiles ->> ${sort})::int as pct
+                 (m.per90 ->> ${sort})::float8 as value, (m.percentiles ->> ${sort})::int as pct, m.peers, m.attr_percentiles
           from player_season_metrics m
           join players p on p.id = m.player_id
+          left join player_market pm on pm.player_id = p.id
           ${latestTeam()}
           where p.visible_to_scouts
             and (${role}::text is null or m.role = ${role})
             and (${name}::text is null or p.display_name ilike '%' || ${name} || '%')
             and m.minutes >= ${minMinutes}
             and (${minPct}::int is null or (m.percentiles ->> ${sort})::int >= ${minPct})
+            and (${country}::text is null or p.nationality = ${country})
+            and (${ageMin}::int is null or ${SEASON_YEAR} - p.birth_year >= ${ageMin})
+            and (${ageMax}::int is null or ${SEASON_YEAR} - p.birth_year <= ${ageMax})
+            and (${contractBy}::date is null or pm.contract_end <= ${contractBy}::date)
           -- players under the minutes threshold have no percentiles; rank them after the qualified ones so tiny samples can't top the list
-          order by (m.percentiles ->> ${sort}) is null, value desc nulls last, p.display_name
+          order by (m.percentiles ->> ${sort}) is null, case when ${ascending} then (m.per90 ->> ${sort})::float8 end asc nulls last, value desc nulls last, p.display_name
           limit 100`
       : Promise.resolve([] as Row[]),
   ]);
@@ -120,23 +143,29 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
         <VStack gap={4}>
           <HStack hAlign="between" vAlign="center" wrap="wrap" gap={2}>
             <Heading level={3}>Players</Heading>
-            <Text type="supporting">{rows.length === 100 ? "Top 100" : `${rows.length} players`} · ranked by {label(sort).toLowerCase()} per 90</Text>
+            <Text type="supporting">{rows.length === 100 ? "Top 100" : `${rows.length} players`} · ranked by {metricLabel(sort).toLowerCase()}{unit(sort) === "/ 90" ? " per 90" : ""}</Text>
           </HStack>
           <Filters
-            key={JSON.stringify([role, sort, minPct, name, minMinutes])}
+            key={JSON.stringify([role, sort, minPct, name, minMinutes, country, ageMin, ageMax, contractBy])}
             roles={roles.map((r) => ({ value: r, label: ROLE_NAMES[r] ?? r }))}
             metrics={keys.map((k) => ({ value: k, label: label(k) }))}
-            initial={{ role, sort, minPct, name, minMinutes: minMinutes || null }}
+            countries={countries.map((c) => ({ value: c, label: c }))}
+            initial={{ role, sort, minPct, name, minMinutes: minMinutes || null, country, ageMin, ageMax, contractBy }}
           />
-          <Table density="compact" hasHover style={{ minWidth: "42rem" }}>
+          <HStack gap={1} vAlign="center" wrap="wrap">
+            <Demo />
+            <Text type="supporting">Age and contract filters run on demo birth years and contract dates until real values exist.</Text>
+          </HStack>
+          <Table density="compact" hasHover style={{ minWidth: "52rem" }}>
             <TableHeader>
               <TableRow>
                 <TableHeaderCell style={{ width: "4%" }}>#</TableHeaderCell>
-                <TableHeaderCell style={{ width: "38%" }}>Player</TableHeaderCell>
+                <TableHeaderCell style={{ width: "30%" }}>Player</TableHeaderCell>
                 <TableHeaderCell>Position</TableHeaderCell>
                 <TableHeaderCell><Text type="inherit" display="block" justify="end">Minutes</Text></TableHeaderCell>
-                <TableHeaderCell><Text type="inherit" display="block" justify="end">{label(sort)} / 90</Text></TableHeaderCell>
+                <TableHeaderCell><Text type="inherit" display="block" justify="end">{label(sort)} {unit(sort)}</Text></TableHeaderCell>
                 <TableHeaderCell><Text type="inherit" display="block" justify="end">Percentile</Text></TableHeaderCell>
+                <TableHeaderCell>Standout qualities</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -159,12 +188,13 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
                   </TableCell>
                   <TableCell><Token size="sm" label={r.role} description={ROLE_NAMES[r.role]} /></TableCell>
                   <TableCell><Text display="block" justify="end" hasTabularNumbers>{r.minutes}</Text></TableCell>
-                  <TableCell><Text display="block" justify="end" hasTabularNumbers>{r.value?.toFixed(2)}</Text></TableCell>
+                  <TableCell><Text display="block" justify="end" hasTabularNumbers>{fmtMetric(sort, r.value)}</Text></TableCell>
                   <TableCell><HStack hAlign="end"><PctBadge pct={r.pct} /></HStack></TableCell>
+                  <TableCell><Standouts keys={standouts(r.attr_percentiles)} labels={attrLabels} peers={r.peers} role={r.role} /></TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
-                <TableRow><TableCell colSpan={6}><Text type="supporting">No players match. Loosen a filter, or pick a preset above.</Text></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7}><Text type="supporting">No players match. Loosen a filter, or pick a preset above.</Text></TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -176,7 +206,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
 }
 
 function FeaturedCard({ p }: { p: Featured }) {
-  const top = Object.keys(p.percentiles).sort((a, b) => p.percentiles[b] - p.percentiles[a]).slice(0, 3);
+  const top = Object.keys(p.percentiles).filter((k) => !LOWER_IS_BETTER.has(k)).sort((a, b) => p.percentiles[b] - p.percentiles[a]).slice(0, 3);
   return (
     <Card className="rise" elevation="low">
       <VStack gap={4}>
@@ -193,7 +223,7 @@ function FeaturedCard({ p }: { p: Featured }) {
             <Card key={k} variant="muted" padding={3}>
               <VStack gap={0}>
                 <Heading level={3}><Count value={p.percentiles[k]} i={i * 2 + 2} /></Heading>
-                <Text type="supporting">{label(k)} percentile · {p.per90[k].toFixed(2)} / 90</Text>
+                <Text type="supporting">{label(k)} percentile · {fmtWithUnit(k, p.per90[k])}</Text>
               </VStack>
             </Card>
           ))}

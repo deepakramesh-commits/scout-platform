@@ -145,12 +145,22 @@ def compute_season_metrics(events: pd.DataFrame, lineups: pd.DataFrame, min_minu
 
 def attribute_percentiles(out: pd.DataFrame, attributes: dict[str, list[str]]) -> list[dict]:
     """Per row: for each attribute with stand-in metrics, the mean of the metric percentiles that exist,
-    ranked within the role (0..100). Rows without percentiles get none."""
+    ranked within the role (0..100). Rows without percentiles get none.
+    A metric counts only in roles where at least half the ranked players record it: otherwise one dribble by a
+    goalkeeper ranks him first and reads as a standout quality."""
+    ranked = out["percentiles"].map(bool)
+    per90 = pd.DataFrame(list(out["per90"]), index=out.index).fillna(0) if "per90" in out else None
+    active = (per90[ranked] > 0).groupby(out["role"][ranked]).mean() >= 0.5 if per90 is not None else None
+
+    def counts(role, m):
+        return active is None or (m in active.columns and role in active.index and bool(active.at[role, m]))
+
     means = pd.DataFrame(
-        [{a: pd.Series([p[m] for m in ms if m in p], dtype=float).mean() for a, ms in attributes.items() if ms} for p in out["percentiles"]],
+        [{a: pd.Series([p[m] for m in ms if m in p and counts(role, m)], dtype=float).mean() for a, ms in attributes.items() if ms}
+         for role, p in zip(out["role"], out["percentiles"])],
         index=out.index)
-    ranked = (means.groupby(out["role"]).rank(pct=True) * 100).round()
-    return [{a: int(v) for a, v in row.items() if v == v} for row in ranked.to_dict("records")]
+    pct = (means.groupby(out["role"]).rank(pct=True) * 100).round()
+    return [{a: int(v) for a, v in row.items() if v == v} for row in pct.to_dict("records")]
 
 
 COUNT_KEYS = [m.key for m in METRICS]

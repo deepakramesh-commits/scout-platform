@@ -9,6 +9,7 @@ dependencies = [
     "psycopg[binary]",
     "socceraction>=1.5.3",
     "multimethod<2",
+    "anthropic>=2.12.0",
 ]
 
 [dependency-groups]

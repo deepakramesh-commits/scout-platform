@@ -1,0 +1,90 @@
+"""Short scouting summaries from a player's numbers. A plain template by default; Claude when ANTHROPIC_API_KEY is set.
+
+People decide; the summary only restates the numbers, so the template and the model get the same facts.
+"""
+import json
+import os
+
+MODEL = "claude-opus-5-5"
+SYSTEM = (
+    "You write three or four plain sentences for a European club scout about an African player, using only the facts "
+    "given as JSON. Lead with the standout qualities. Say when a ranking rests on few players or few minutes. "
+    "Never invent a number, a trait or a comparison that is not in the facts. No headings, no lists."
+)
+
+
+def facts(cur, player_id, competition_id) -> dict:
+    cur.execute("""
+        select p.display_name, p.birth_year, 'birth_year' = any(p.demo_fields) as age_is_demo, c.name, m.role, m.minutes, m.peers,
+               m.per90, m.percentiles, m.attr_percentiles,
+               (select count(*) from lineups l join matches mt on mt.id = l.match_id
+                where l.player_id = p.id and mt.competition_id = c.id and l.minutes_played > 0) as matches
+        from players p join player_season_metrics m on m.player_id = p.id join competitions c on c.id = m.competition_id
+        where p.id = %s and c.id = %s order by m.minutes desc limit 1""", (player_id, competition_id))
+    row = cur.fetchone()
+    if row is None:
+        raise LookupError(f"no metrics for player {player_id} in competition {competition_id}")
+    name, by, demo_age, comp, role, minutes, peers, per90, pct, attr, matches = row
+    cur.execute("select key, label from attributes")
+    labels = dict(cur.fetchall())
+    ranked = sorted(((k, v) for k, v in pct.items()), key=lambda kv: -kv[1])
+    return {
+        "name": name, "competition": comp, "position": role, "minutes": minutes, "matches": matches,
+        "ranked_against": peers, "birth_year": by, "birth_year_is_demo": demo_age,
+        "standout_qualities": [labels.get(k, k) for k, v in sorted(attr.items(), key=lambda kv: -kv[1]) if v > 85][:2],
+        "best_measures": [{"measure": k, "percentile": v, "value": per90.get(k)} for k, v in ranked[:3]],
+        "weakest_measures": [{"measure": k, "percentile": v, "value": per90.get(k)} for k, v in ranked[-2:]] if ranked else [],
+    }
+
+
+def nice(key: str) -> str:
+    return "xT" if key == "xt" else "xG" if key == "xg" else key.removesuffix("_pct").replace("_", " ")
+
+
+def template_summary(f: dict) -> str:
+    out = [f"{f['name']} played {f['minutes']} minutes in {f['matches']} matches at {f['competition']} as a {f['position']}."]
+    if f["standout_qualities"]:
+        out.append(f"Standout qualities: {' and '.join(q.lower() for q in f['standout_qualities'])}.")
+    if f["best_measures"]:
+        best = ", ".join(f"{nice(m['measure'])} ({m['percentile']}th percentile)" for m in f["best_measures"])
+        out.append(f"Best measures against other {f['position']} players: {best}.")
+    else:
+        out.append("He has not played enough minutes to be ranked yet.")
+    if f["weakest_measures"]:
+        out.append(f"Weakest: {', '.join(nice(m['measure']) for m in f['weakest_measures'])}.")
+    if f["ranked_against"] and f["ranked_against"] < 10:
+        out.append(f"Rankings rest on only {f['ranked_against']} players in this position, so treat them as indicative.")
+    return " ".join(out)
+
+
+def claude_summary(f: dict) -> str:
+    import anthropic
+
+    client = anthropic.Anthropic()
+    response = client.beta.messages.create(
+        model=MODEL,
+        max_tokens=2048,
+        system=SYSTEM,
+        output_config={"effort": "low"},
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        messages=[{"role": "user", "content": json.dumps(f, ensure_ascii=False)}],
+    )
+    if response.stop_reason == "refusal":
+        raise RuntimeError("the model declined to write this summary")
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not text:
+        raise RuntimeError(f"empty summary (stop_reason {response.stop_reason})")
+    return text
+
+
+def write_summary(cur, player_id, competition_id) -> str:
+    f = facts(cur, player_id, competition_id)
+    use_claude = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    text, source = (claude_summary(f), "claude") if use_claude else (template_summary(f), "template")
+    cur.execute(
+        "insert into player_summaries (player_id, competition_id, text, source, model) values (%s,%s,%s,%s,%s) "
+        "on conflict (player_id, competition_id) do update set text=excluded.text, source=excluded.source, "
+        "model=excluded.model, created_at=now()",
+        (player_id, competition_id, text, source, MODEL if use_claude else None))
+    return source

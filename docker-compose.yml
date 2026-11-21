@@ -13,6 +13,7 @@ services:
       - ./supabase/migrations/20261121000100_phase2_scout_reports.sql:/docker-entrypoint-initdb.d/21_phase2_scout_reports.sql:ro
       - ./supabase/migrations/20261121000200_phase3_risk_market.sql:/docker-entrypoint-initdb.d/22_phase3_risk_market.sql:ro
       - ./supabase/migrations/20261121000300_phase4_accounts.sql:/docker-entrypoint-initdb.d/23_phase4_accounts.sql:ro
+      - ./supabase/migrations/20261121000400_phase5_data_engine.sql:/docker-entrypoint-initdb.d/24_phase5_data_engine.sql:ro
       - dbdata:/var/lib/postgresql/data
 volumes:
   dbdata:
