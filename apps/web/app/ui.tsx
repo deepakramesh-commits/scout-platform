@@ -33,14 +33,13 @@ export function PlayerAvatar({ name, photo, size = 40 }: { name: string; photo?:
   return <Avatar src={photo ?? SILHOUETTE} name={name} alt="" size={size} tooltip={false} />;
 }
 
-export function PctBadge({ pct }: { pct: number | null | undefined }) {
-  return <Badge variant={BADGE[tier(pct)]} label={pct ?? "–"} />;
+export function PctBadge({ pct, lowerIsBetter = false }: { pct: number | null | undefined; lowerIsBetter?: boolean }) {
+  return <Badge variant={BADGE[tier(pct == null || !lowerIsBetter ? pct : 100 - pct)]} label={pct ?? "–"} />;
 }
 
 type Vars = React.CSSProperties & Record<`--${string}`, string | number>;
 
 // `i` is the stagger slot; bars and counts with the same slot animate together.
-// `lowerIsBetter`: the bar still measures the percentile, but its colour says how good that is.
 export function PctBar({ pct, flip = false, i = 0, lowerIsBetter = false }: { pct: number | null | undefined; flip?: boolean; i?: number; lowerIsBetter?: boolean }) {
   return (
     <span className={`pbar${flip ? " flip" : ""}`}>
@@ -55,12 +54,12 @@ export function Count({ value, i = 0, suffix }: { value: number | null | undefin
   );
 }
 
-/** Next to any value that comes from demo data. Never present demo as real. */
+export const PRIORITY_COLOR = { very_high: "green", high: "teal", medium: "default" } as const;
+
 export function Demo() {
   return <Token size="sm" label="Demo" color="orange" description="Demo value, not measured" />;
 }
 
-/** Standout qualities as attribute labels, with the small-group caveat when the ranking rests on few peers. */
 export function Standouts({ keys, labels, peers, role }: { keys: string[]; labels: Record<string, string>; peers: number; role: string }) {
   if (!keys.length) return <Text type="supporting">–</Text>;
   const note = smallGroupNote(peers, role);

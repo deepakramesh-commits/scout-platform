@@ -1,11 +1,7 @@
--- Phase 1: buyer-first scouting. Attribute registry, requirement profiles, demo-value flags, market details.
-
--- 33 = len(metrics.KEYS); worker/test_metrics.py checks the two agree. The worker refills the column.
 drop index if exists player_season_metrics_style_idx;
 alter table player_season_metrics alter column style type vector(33) using null;
 create index player_season_metrics_style_idx on player_season_metrics using hnsw (style vector_cosine_ops);
 
--- Demo values that sit inside a real row are named here, column by column, so one command can strip them.
 alter table players add column height_cm int check (height_cm between 140 and 215),
                     add column demo_fields text[] not null default '{}';
 
@@ -33,7 +29,6 @@ insert into physical_test_kinds values
 alter table physical_tests add column is_demo boolean not null default false,
   add constraint physical_tests_test_fkey foreign key (test) references physical_test_kinds;
 
--- The one attribute registry, in the scout's words. `metrics` are stand-ins from worker/metrics.py KEYS.
 create table attributes (
   key text primary key,
   label text not null,
@@ -97,7 +92,6 @@ create table requirement_items (
   primary key (profile_id, attribute)
 );
 
--- Seeded from section 2C and section 5 of the scout notes. Fixed ids so re-runs and links are stable.
 insert into requirement_profiles (id, name, club, positions, age_min, age_max, is_draft, note) values
   ('00000000-0000-4000-a000-000000000001', 'Explosive winger', null, '{LW,RW}', null, null, false, 'Can play on both flanks. The notes give no priorities; the first two listed are set very high, the rest high.'),
   ('00000000-0000-4000-a000-000000000002', 'Modern striker', null, '{ST}', null, null, false, 'Finishing with few touches counts first-time shots. Priorities set as for the winger.'),
@@ -122,16 +116,11 @@ select ('00000000-0000-4000-a000-00000000000' || p)::uuid, a, pr from (values
   (8, 'acceleration', 'high'), (8, 'dribbling', 'high'), (8, 'final_pass', 'high'), (8, 'finishing', 'high'), (8, 'pressing', 'high'), (8, 'carrying', 'high')
 ) v(p, a, pr);
 
--- Fit and standouts read a real percentile per attribute: the worker averages the stand-in metric
--- percentiles and ranks that average within the position, so "above the 85th" means what it says.
 alter table player_season_metrics add column attr_percentiles jsonb not null default '{}',
                                   add column peers int not null default 0;
--- The minutes a player needs before percentiles show. The plan's league rule is 450; a tournament gets less.
 alter table competitions add column min_minutes int not null default 450 check (min_minutes > 0);
--- Profiles built from match data are live unless the age rule or consent says otherwise (phase 4 replaces this with a status).
 alter table players alter column visible_to_scouts set default true;
 
--- Demo organisations and one user of each type (worker/seed_demo.py). The club coordinator fills the match sheet.
 alter table orgs add column is_demo boolean not null default false;
 alter table app_users add column display_name text, add column is_demo boolean not null default false,
   drop constraint app_users_role_check,

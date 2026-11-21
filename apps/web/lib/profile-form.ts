@@ -1,4 +1,4 @@
-// Pure: parses the requirement-profile form on the server. Relative `.ts` imports so `node --test` runs it.
+// node --test ignores tsconfig paths and needs file extensions: import only relative `.ts` files here.
 import { PRIORITY_WEIGHT, type FitItem, type Priority } from "./fit.ts";
 
 export const AGE_MIN = 14;
@@ -10,7 +10,6 @@ export type ProfileInput = {
 export type ProfileField = "name" | "club" | "positions" | "ages" | "items";
 export type ParsedProfile = { ok: true; value: ProfileInput } | { ok: false; errors: Partial<Record<ProfileField, string>> };
 
-/** Form field carrying the priority of a chosen attribute. */
 export const priorityField = (attribute: string) => `priority.${attribute}`;
 
 const isPriority = (v: unknown): v is Priority => typeof v === "string" && Object.hasOwn(PRIORITY_WEIGHT, v);

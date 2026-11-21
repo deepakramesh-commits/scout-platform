@@ -4,7 +4,6 @@ import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 
-/** Shared body for each route's error.tsx: say what failed and offer a retry. */
 export function RouteError({ what, retry }: { what: string; retry: () => void }) {
   return (
     <Card>

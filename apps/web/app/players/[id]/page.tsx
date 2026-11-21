@@ -15,7 +15,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { sql } from "@/lib/db";
-import { standouts } from "@/lib/fit";
+import { attributeValue, standouts } from "@/lib/fit";
 import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, ROLE_NAMES, rolePlural, smallGroupNote } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import {
@@ -52,6 +52,8 @@ const isSection = (v: unknown): v is Section => SECTIONS.some((s) => s.value ===
 
 const AVAILABILITY: Record<string, string> = { available: "Available", open_to_offers: "Open to offers", not_available: "Not available" };
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const roundOrNull = (v: number | null) => (v == null ? null : Math.round(v));
+const styleMatch = (cosine: number) => Math.round(((1 + cosine) / 2) * 100);
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
 export default async function PlayerPage({ params, searchParams }: {
@@ -134,7 +136,6 @@ export default async function PlayerPage({ params, searchParams }: {
 }
 
 async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; attrs: Map<string, Attribute>; plural: string; fit: React.ReactNode }) {
-  // Same cut-in rule as worker/metrics.py `_cut_in`.
   const events = await sql<Ev[]>`
     select type, x::float8 as x, y::float8 as y, end_x::float8 as end_x, end_y::float8 as end_y, (extra ->> 'xg')::float8 as xg
     from events
@@ -227,7 +228,7 @@ function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribut
       <VStack gap={1}>
         <Heading level={2}>Scout view</Heading>
         <Text color="secondary">
-          Every attribute a scout judges, in the scout’s words, with the evidence it has today. Scout reports and ratings arrive in phase 2.
+          Every attribute a scout judges, in the scout’s words, with the evidence it has today. Scout ratings are not shown here yet.
           {small && ` Match percentiles are ${small}.`}
         </Text>
       </VStack>
@@ -243,7 +244,7 @@ function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribut
                     <VStack gap={0}>
                       <HStack gap={2} hAlign="between" vAlign="center">
                         <Text weight="semibold">{a.label}</Text>
-                        <PctBadge pct={average(ev.match, ev.test)} />
+                        <PctBadge pct={roundOrNull(attributeValue(ev))} />
                       </HStack>
                       <Text type="supporting">{SOURCE_LABEL[a.source]} · {a.description}</Text>
                       <HStack gap={1} vAlign="center" wrap="wrap">
@@ -251,7 +252,7 @@ function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribut
                           {[
                             ev.match != null && `Match percentile ${ev.match}`,
                             ev.test != null && `Test percentile ${ev.test}`,
-                            a.source === "scout" && "No scout rating yet",
+                            a.source === "scout" && "Scout ratings not counted yet",
                           ].filter(Boolean).join(" · ") || "No evidence yet"}
                         </Text>
                         {evidence.demo.has(a.key) && <Demo />}
@@ -268,11 +269,6 @@ function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribut
     </VStack>
   );
 }
-
-const average = (...xs: (number | undefined)[]) => {
-  const present = xs.filter((x): x is number => x != null);
-  return present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
-};
 
 async function RiskAndMarket({ id, p }: { id: string; p: Player }) {
   const [[market], tests] = await Promise.all([
@@ -378,8 +374,7 @@ async function SimilarPlayers({ id, p, plural }: { id: string; p: Player; plural
                     <Text type="supporting" maxLines={1}>{flag(s.team)} {s.team}</Text>
                   </VStack>
                 </StackItem>
-                {/* cosine is -1..1; shown as a 0-100 style match */}
-                <Text weight="bold" color="accent" hasTabularNumbers>{Math.round(((1 + s.similarity) / 2) * 100)}%</Text>
+                <Text weight="bold" color="accent" hasTabularNumbers>{styleMatch(s.similarity)}%</Text>
               </HStack>
             </ClickableCard>
           ))}

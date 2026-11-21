@@ -11,7 +11,6 @@
 
 /* Metric rows: label, bar, per-90 value, percentile. Compare rows mirror two bars around the label. */
 .mrow { grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr) 3rem 2.25rem; align-items: center; }
-/* Fit card: the bar, then the 0-100 value. */
 .frow { grid-template-columns: minmax(0, 1fr) 2.25rem; align-items: center; }
 .cmp { grid-template-columns: 3.25rem minmax(0, 1fr) minmax(0, 9rem) minmax(0, 1fr) 3.25rem; align-items: center; }
 @media (max-width: 40rem) {

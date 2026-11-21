@@ -3,6 +3,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Link } from "@astryxdesign/core/Link";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from "@astryxdesign/core/Table";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
@@ -13,7 +14,7 @@ import { ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import { ageRange, draftLabel, getAttributes, getEvidence, getProfiles, SEASON_YEAR, type Profile } from "@/lib/scouting";
 import { ProfilePicker } from "../profile-picker";
-import { Demo, flag, PlayerAvatar, Standouts } from "../ui";
+import { Demo, flag, PlayerAvatar, PRIORITY_COLOR, Standouts } from "../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,6 @@ type Ranked = Candidate & { fit: Fit; demo: boolean };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
-// The player's main row (most minutes) decides his position, as it does for the evidence.
 const candidates = (p: Profile) => sql<Candidate[]>`
   select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.peers, m.attr_percentiles, p.birth_year,
          'birth_year' = any(p.demo_fields) as age_is_demo
@@ -76,8 +76,10 @@ export default async function FindByRole({ searchParams }: { searchParams: Promi
       <Card>
         <VStack gap={4}>
           <HStack gap={3} wrap="wrap" vAlign="end" hAlign="between">
-            <ProfilePicker key={profile.id} action="/roles" name="profile" value={profile.id}
-              options={profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />
+            <StackItem size="fill">
+              <ProfilePicker key={profile.id} action="/roles" name="profile" value={profile.id}
+                options={profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />
+            </StackItem>
             <Button variant="ghost" label="Write your own profile" href="/profiles" />
           </HStack>
           <VStack gap={2}>
@@ -91,7 +93,7 @@ export default async function FindByRole({ searchParams }: { searchParams: Promi
             {profile.note && <Text type="supporting">{profile.note}</Text>}
             <HStack gap={1} wrap="wrap">
               {profile.items.map((i) => (
-                <Token key={i.attribute} size="sm" color={i.priority === "very_high" ? "green" : i.priority === "high" ? "teal" : "default"}
+                <Token key={i.attribute} size="sm" color={PRIORITY_COLOR[i.priority]}
                   label={`${labels[i.attribute] ?? i.attribute} · ${PRIORITY_LABEL[i.priority]}`} />
               ))}
             </HStack>
@@ -101,7 +103,7 @@ export default async function FindByRole({ searchParams }: { searchParams: Promi
 
       {ranked.length === 0 ? (
         <Card>
-          <EmptyState title="No players in these positions" description={`No visible player plays mainly ${profile.positions.join(" or ")}${ages ? `, ${ages}` : ""}. Widen the age range or the positions in a new profile.`}
+          <EmptyState title="No players in these positions" description={`No visible player plays mainly as ${profile.positions.map((r) => (ROLE_NAMES[r] ?? r).toLowerCase()).join(" or ")}${ages ? `, ${ages}` : ""}. Widen the age range or the positions in a new profile.`}
             actions={<Button label="Write a profile" href="/profiles" />} />
         </Card>
       ) : (
@@ -128,7 +130,7 @@ export default async function FindByRole({ searchParams }: { searchParams: Promi
           )}
           <Text type="supporting">
             Fit averages the evidence for each attribute (match percentile within the position, physical test percentile among tested players),
-            weighted very high 3, high 2, medium 1. Scout ratings join in phase 2. A Demo mark means some of the evidence comes from demo physical tests.
+            weighted very high 3, high 2, medium 1. Scout ratings are not counted yet. A Demo mark means some of the evidence comes from demo physical tests.
           </Text>
         </>
       )}
@@ -142,8 +144,8 @@ function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<stri
       <TableHeader>
         <TableRow>
           <TableHeaderCell style={{ width: "4%" }}>#</TableHeaderCell>
+          <TableHeaderCell style={{ width: "12%" }}>Fit</TableHeaderCell>
           <TableHeaderCell style={{ width: "34%" }}>Player</TableHeaderCell>
-          <TableHeaderCell><Text type="inherit" display="block" justify="end">Fit</Text></TableHeaderCell>
           <TableHeaderCell>Coverage</TableHeaderCell>
           <TableHeaderCell>Standout qualities</TableHeaderCell>
         </TableRow>
@@ -152,6 +154,12 @@ function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<stri
         {rows.map((r, i) => (
           <TableRow key={r.id} className={i < 10 ? "in" : undefined} style={i < 10 ? ({ "--i": i } as React.CSSProperties) : undefined}>
             <TableCell><Text type="supporting" hasTabularNumbers>{i + 1}</Text></TableCell>
+            <TableCell>
+              <VStack gap={1} hAlign="start">
+                <Text weight="bold" hasTabularNumbers>{r.fit.score ?? "–"}</Text>
+                {r.demo && <Demo />}
+              </VStack>
+            </TableCell>
             <TableCell>
               <Link href={`/players/${r.id}`}>
                 <HStack gap={2} vAlign="center">
@@ -165,12 +173,6 @@ function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<stri
                   </VStack>
                 </HStack>
               </Link>
-            </TableCell>
-            <TableCell>
-              <HStack gap={1} hAlign="end" vAlign="center">
-                {r.demo && <Demo />}
-                <Text weight="bold" hasTabularNumbers>{r.fit.score ?? "–"}</Text>
-              </HStack>
             </TableCell>
             <TableCell><Text type="supporting" hasTabularNumbers>{r.fit.measured} of {r.fit.total} measured</Text></TableCell>
             <TableCell><Standouts keys={standouts(r.attr_percentiles)} labels={labels} peers={r.peers} role={r.role} /></TableCell>

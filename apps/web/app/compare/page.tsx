@@ -75,7 +75,6 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
   );
 
   const groups = a && b ? grouped(Object.keys(a.per90)) : [];
-  // The radar reads "further out is better", so it leaves out lower-is-better metrics and any metric either player lacks.
   const radar = a && b
     ? groups.flatMap(([, ks]) => ks)
         .filter((k) => !LOWER_IS_BETTER.has(k) && a.percentiles[k] != null && b.percentiles[k] != null)

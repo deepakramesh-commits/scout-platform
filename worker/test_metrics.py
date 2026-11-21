@@ -64,12 +64,15 @@ def test_new_counting_metrics():
         ev("a", "goalkeeper", outcome="success", extra={"gk_type": "shot_saved"}),
         ev("a", "goalkeeper", outcome="claim", extra={"gk_type": "keeper_sweeper"}),
         ev("a", "goalkeeper", outcome="success", extra={"gk_type": "collected"}),
+        ev("a", "goalkeeper", outcome="fail", extra={"gk_type": "collected"}),
+        ev("a", "goalkeeper", outcome="saved_twice", extra={"gk_type": "penalty_saved"}),
+        ev("a", "ball_receipt", outcome="incomplete", x=50, y=40, extra={"through_ball": True}),
     ])
     p = compute_season_metrics(events, lineups([("a", "ST", 90)]), 0).iloc[0]["per90"]
     expected = {
         "goals": 1, "assists": 1, "first_time_shots": 1, "shots_on_target": 2, "long_passes": 1, "pressures": 1,
         "through_balls_received": 1, "receptions_in_box": 1, "blocks": 1, "aerial_duels_won": 1,
-        "ball_losses": 2, "saves": 1, "crosses_claimed": 2,
+        "ball_losses": 2, "saves": 2, "crosses_claimed": 1,
     }
     assert {k: p[k] for k in expected} == expected
 
@@ -81,9 +84,9 @@ def test_ratio_metrics_are_shares_not_per90_and_empty_under_min_denominator():
     lost = [ev("a", "miscontrol", extra={"under_pressure": True}), ev("a", "miscontrol", extra={"under_pressure": True})]
     events = pd.DataFrame(passes + dribbles + receptions + lost)
     p = compute_season_metrics(events, lineups([("a", "CM", 45)]), 0).iloc[0]["per90"]
-    assert p["pass_accuracy_pct"] == 90.0  # minutes do not scale a share
+    assert p["pass_accuracy_pct"] == 90.0
     assert p["first_touch_under_pressure_pct"] == 75.0
-    assert p["dribble_success_pct"] is None  # 2 attempts is under the minimum
+    assert p["dribble_success_pct"] is None
     assert p["tackle_success_pct"] is None
 
 
@@ -143,10 +146,9 @@ def test_match_index_ranks_each_match_within_role_and_marks_stronger_opponents()
     ])
     matches = pd.DataFrame([{"id": "m1", "home_team_id": "A", "away_team_id": "C"}, {"id": "m2", "home_team_id": "A", "away_team_id": "B"}])
     out = match_index(events, lu, matches).set_index(["player_id", "match_id"])
-    assert ("c", "m2") not in out.index  # under 30 minutes
+    assert ("c", "m2") not in out.index
     assert out.loc[("a", "m1"), "index"] > out.loc[("x", "m1"), "index"]
     assert out.loc[("a", "m1"), "index"] == 100 and 0 <= out.loc[("x", "m1"), "index"] <= 100
-    # A: +1 then -2 = -0.5 per match; B: +2; C: -1. B is stronger than A, C is not
     assert bool(out.loc[("a", "m2"), "opponent_stronger"]) and not bool(out.loc[("a", "m1"), "opponent_stronger"])
     assert out.loc[("a", "m2"), "opponent_team_id"] == "B"
 

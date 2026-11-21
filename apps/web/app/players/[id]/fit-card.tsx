@@ -9,11 +9,8 @@ import { fitScore, PRIORITY_LABEL } from "@/lib/fit";
 import { smallGroupNote } from "@/lib/metrics";
 import { draftLabel, SOURCE_LABEL, type Attribute, type PlayerEvidence, type Profile } from "@/lib/scouting";
 import { ProfilePicker } from "../../profile-picker";
-import { Count, Demo, PctBar } from "../../ui";
+import { Count, Demo, PctBar, PRIORITY_COLOR } from "../../ui";
 
-const PRIORITY_COLOR = { very_high: "green", high: "teal", medium: "default" } as const;
-
-/** How well this player fits one requirement profile: the score, its coverage, then one bar per attribute. */
 export function FitCard({ playerId, profiles, profile, attributes, evidence, peers, role }: {
   playerId: string; profiles: Profile[]; profile: Profile; attributes: Map<string, Attribute>;
   evidence: PlayerEvidence; peers: number; role: string;
@@ -72,7 +69,7 @@ export function FitCard({ playerId, profiles, profile, attributes, evidence, pee
         </VStack>
         <Text type="supporting">
           Each bar is 0 to 100: the match percentile within the position and the physical test percentile among tested players, averaged where both exist.
-          Scout ratings join in phase 2.{small && ` Match percentiles here are ${small}.`}
+          Scout ratings are not counted yet.{small && ` Match percentiles here are ${small}.`}
         </Text>
       </VStack>
     </Card>

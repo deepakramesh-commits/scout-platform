@@ -24,7 +24,6 @@ type AttributeOption = Option & { source: string; group: string };
 const PRIORITIES = Object.entries(PRIORITY_LABEL).map(([value, label]) => ({ value, label }));
 const error = (message: string | undefined) => (message ? { type: "error" as const, message } : undefined);
 
-// Fields are controlled, so a rejected save keeps everything the club typed. The server validates again.
 export function ProfileForm({ positions, attributes }: { positions: Option[]; attributes: AttributeOption[] }) {
   const [state, action, pending] = useActionState(saveProfile, null);
   const [name, setName] = useState("");
@@ -34,7 +33,6 @@ export function ProfileForm({ positions, attributes }: { positions: Option[]; at
   const [ageMax, setAgeMax] = useState<number | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [priority, setPriority] = useState<Record<string, string>>({});
-  // A field's error clears as soon as the club edits that field; a new save result replaces them all.
   const [errors, setErrors] = useState<Partial<Record<ProfileField, string>>>({});
   const [seen, setSeen] = useState(state);
   if (state !== seen) { setSeen(state); setErrors(state?.errors ?? {}); }

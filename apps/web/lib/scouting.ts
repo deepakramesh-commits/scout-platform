@@ -18,11 +18,9 @@ export type Profile = {
   is_draft: boolean; note: string | null; items: FitItem[];
 };
 
-/** Evidence per attribute, plus the attributes whose evidence comes from a demo row. */
 export type PlayerEvidence = { evidence: Record<string, Evidence>; demo: Set<string> };
 
-/** The brief fixes ages to this season; a null birth year is "age not recorded". */
-export const SEASON_YEAR = 2026;
+export const SEASON_YEAR = new Date().getUTCFullYear();
 
 export const draftLabel = (p: Pick<Profile, "is_draft" | "club">) =>
   p.is_draft ? `Draft until ${p.club ?? "the club"} confirms` : null;
@@ -45,10 +43,6 @@ export const getProfiles = () =>
     group by r.id
     order by r.created_at, r.id`;
 
-/**
- * CTE `ranked`: each player's latest test of each kind, with its percentile among every player's latest test of
- * that kind. A fast sprint ranks high: kinds where lower is better are ordered by the negated value.
- */
 const rankedTests = () => sql`
   latest as (
     select distinct on (player_id, test) player_id, test, value, unit, tested_at, verified, is_demo
@@ -69,12 +63,6 @@ export const getTests = (playerId: string) =>
     select test, label, value::float8 as value, unit, tested_at, verified, is_demo, pct
     from ranked where player_id = ${playerId} order by label`;
 
-/**
- * Fit evidence for a set of players.
- * - match: the attribute percentile of the player's main row (most minutes). Real data only.
- * - test: percentile of the player's latest test among every player's latest test of that kind.
- * - scout: none yet. Phase 2 adds `scout_ratings`; its mean rating x 10 goes in `scout` here.
- */
 export async function getEvidence(playerIds: string[]): Promise<Map<string, PlayerEvidence>> {
   const out = new Map<string, PlayerEvidence>(playerIds.map((id) => [id, { evidence: {}, demo: new Set() }]));
   if (!playerIds.length) return out;

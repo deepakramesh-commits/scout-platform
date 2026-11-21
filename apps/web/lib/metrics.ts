@@ -16,23 +16,18 @@ export const GROUPS: [string, string[]][] = [
   ["Goalkeeping", ["saves", "crosses_claimed"]],
 ];
 
-/** Metrics where a smaller number is the better one. Their percentiles still rank the raw count, high = many. */
 export const LOWER_IS_BETTER = new Set(["ball_losses"]);
 
 const isShare = (key: string) => key.endsWith("_pct");
 
-/** Unit shown after a value: `_pct` keys are shares of attempts (0 to 100), everything else is per 90 minutes. */
 export const unit = (key: string) => (isShare(key) ? "%" : "/ 90");
 
-/** The one way a metric value is printed. A share is empty when there were too few attempts to judge. */
 export const fmtMetric = (key: string, v: number | null | undefined) =>
   v == null ? "–" : isShare(key) ? `${Math.round(v)}%` : v.toFixed(2);
 
-/** Value with its unit, for prose: "62%", "1.23 / 90". */
 export const fmtWithUnit = (key: string, v: number | null | undefined) =>
   v == null || isShare(key) ? fmtMetric(key, v) : `${fmtMetric(key, v)} / 90`;
 
-/** Metric label with the direction spelled out where lower is better. */
 export const metricLabel = (key: string) => (LOWER_IS_BETTER.has(key) ? `${label(key)} (lower is better)` : label(key));
 
 export const grouped = (keys: string[]): [string, string[]][] => {
@@ -49,7 +44,6 @@ export const ROLE_NAMES: Record<string, string> = {
 
 export const rolePlural = (role: string) => `${(ROLE_NAMES[role] ?? role).toLowerCase()}s`;
 
-/** Rankings resting on fewer peers than this are flagged on screen. */
 export const SMALL_GROUP = 10;
 export const smallGroupNote = (peers: number, role: string) =>
   peers > 0 && peers < SMALL_GROUP ? `ranked among only ${peers} ${rolePlural(role)}` : null;

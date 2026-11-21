@@ -6,7 +6,6 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Selector, type SelectorOptionType } from "@astryxdesign/core/Selector";
 
-// A GET form like search: the chosen profile lives in the URL, so links and the back button keep it.
 export function ProfilePicker({ action, name, options, value, label = "Requirement profile" }: {
   action: string; name: string; options: SelectorOptionType[]; value: string; label?: string;
 }) {

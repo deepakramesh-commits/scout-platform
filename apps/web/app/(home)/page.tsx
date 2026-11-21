@@ -50,12 +50,14 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   const name = first(q.name) ?? null;
   const minPct = int(first(q.minPct));
   const minMinutes = int(first(q.minMinutes)) ?? 0;
-  const country = countries.includes(first(q.country) ?? "") ? first(q.country)! : null;
+  const c = first(q.country);
+  const country = c && countries.includes(c) ? c : null;
   const ageMin = int(first(q.ageMin));
   const ageMax = int(first(q.ageMax));
   const by = first(q.contractBy);
   const contractBy = isIsoDate(by) ? by : null;
   const ascending = LOWER_IS_BETTER.has(sort);
+  const initial = { role, sort, minPct, name, minMinutes: minMinutes || null, country, ageMin, ageMax, contractBy };
 
   const [[kpi], [featured], rows] = await Promise.all([
     sql<Kpis[]>`
@@ -85,7 +87,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
             and (${role}::text is null or m.role = ${role})
             and (${name}::text is null or p.display_name ilike '%' || ${name} || '%')
             and m.minutes >= ${minMinutes}
-            and (${minPct}::int is null or (m.percentiles ->> ${sort})::int >= ${minPct})
+            and (${minPct}::int is null or (case when ${ascending} then 100 - (m.percentiles ->> ${sort})::int else (m.percentiles ->> ${sort})::int end) >= ${minPct})
             and (${country}::text is null or p.nationality = ${country})
             and (${ageMin}::int is null or ${SEASON_YEAR} - p.birth_year >= ${ageMin})
             and (${ageMax}::int is null or ${SEASON_YEAR} - p.birth_year <= ${ageMax})
@@ -146,11 +148,11 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
             <Text type="supporting">{rows.length === 100 ? "Top 100" : `${rows.length} players`} · ranked by {metricLabel(sort).toLowerCase()}{unit(sort) === "/ 90" ? " per 90" : ""}</Text>
           </HStack>
           <Filters
-            key={JSON.stringify([role, sort, minPct, name, minMinutes, country, ageMin, ageMax, contractBy])}
+            key={JSON.stringify(initial)}
             roles={roles.map((r) => ({ value: r, label: ROLE_NAMES[r] ?? r }))}
             metrics={keys.map((k) => ({ value: k, label: label(k) }))}
             countries={countries.map((c) => ({ value: c, label: c }))}
-            initial={{ role, sort, minPct, name, minMinutes: minMinutes || null, country, ageMin, ageMax, contractBy }}
+            initial={initial}
           />
           <HStack gap={1} vAlign="center" wrap="wrap">
             <Demo />
@@ -189,7 +191,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
                   <TableCell><Token size="sm" label={r.role} description={ROLE_NAMES[r.role]} /></TableCell>
                   <TableCell><Text display="block" justify="end" hasTabularNumbers>{r.minutes}</Text></TableCell>
                   <TableCell><Text display="block" justify="end" hasTabularNumbers>{fmtMetric(sort, r.value)}</Text></TableCell>
-                  <TableCell><HStack hAlign="end"><PctBadge pct={r.pct} /></HStack></TableCell>
+                  <TableCell><HStack hAlign="end"><PctBadge pct={r.pct} lowerIsBetter={ascending} /></HStack></TableCell>
                   <TableCell><Standouts keys={standouts(r.attr_percentiles)} labels={attrLabels} peers={r.peers} role={r.role} /></TableCell>
                 </TableRow>
               ))}

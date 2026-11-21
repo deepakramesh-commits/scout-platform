@@ -126,13 +126,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--competition-id", type=int, default=1267)
     ap.add_argument("--season-id", type=int, default=107)
-    ap.add_argument("--min-minutes", type=int, default=450, help="minutes before percentiles show; a tournament needs fewer")
+    ap.add_argument("--min-minutes", type=int, help="minutes before percentiles show (default 450); a re-run without it keeps the stored value")
     a = ap.parse_args()
 
     comps = sb.competitions()
     c = comps[(comps.competition_id == a.competition_id) & (comps.season_id == a.season_id)].iloc[0]
     comp_id = uid("competition", f"{a.competition_id}:{a.season_id}")
-    competition = [(comp_id, c.competition_name, c.country_name, None, str(c.season_name), a.min_minutes)]
+    competition = [(comp_id, c.competition_name, c.country_name, None, str(c.season_name))]
 
     teams, matches, lineups, events = {}, [], [], []
     players = {}
@@ -178,21 +178,21 @@ def main():
 
     with psycopg.connect(os.environ.get("DATABASE_URL", DEFAULT_DB)) as conn, conn.cursor() as cur:
         cur.executemany(
-            "insert into competitions (id, name, country, age_group, season, min_minutes) values (%s,%s,%s,%s,%s,%s) "
+            "insert into competitions (id, name, country, age_group, season) values (%s,%s,%s,%s,%s) "
             "on conflict (id) do update set name=excluded.name, country=excluded.country, age_group=excluded.age_group, "
-            "season=excluded.season, min_minutes=excluded.min_minutes",
+            "season=excluded.season",
             competition)
+        if a.min_minutes is not None:
+            cur.execute("update competitions set min_minutes = %s where id = %s", (a.min_minutes, comp_id))
         cur.executemany(
             "insert into teams (id, name, country) values (%s,%s,%s) "
             "on conflict (id) do update set name=excluded.name, country=excluded.country", list(teams.values()))
         cur.executemany(
-            # visibility belongs to the consent and approval workflow, so a re-run never resurfaces a hidden profile
             "insert into players (id, display_name, nationality, primary_position) values (%s,%s,%s,%s) "
             "on conflict (id) do update set display_name=excluded.display_name, nationality=excluded.nationality, "
             "primary_position=excluded.primary_position",
             player_rows)
         cur.executemany(
-            # open data is already checked by its publisher, so it enters as published
             "insert into matches (id, competition_id, home_team_id, away_team_id, kickoff_at, status) values (%s,%s,%s,%s,%s,'published') "
             "on conflict (id) do update set competition_id=excluded.competition_id, home_team_id=excluded.home_team_id, "
             "away_team_id=excluded.away_team_id, kickoff_at=excluded.kickoff_at", matches)

@@ -7,12 +7,12 @@ import { Shell } from "./shell";
 
 export const metadata: Metadata = { title: "Scout · African football talent" };
 
-// The nav names the competitions in the database, so it is rendered per request like every page.
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [{ names }] = await sql<{ names: string | null }[]>`
-    select string_agg(name || ' ' || season, ' · ' order by season desc, name) as names from competitions`;
+    select string_agg(name || ' ' || season, ' · ' order by season desc, name) as names from competitions`
+    .catch(() => [{ names: null }]);
   return (
     <html lang="en">
       <head>

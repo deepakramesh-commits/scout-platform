@@ -14,7 +14,6 @@ test("averages the evidence that exists per attribute, then weights by priority"
     finishing: { match: 90, scout: 70 },
     pressing: { match: 20 },
   });
-  // speed 80 x3, finishing 80 x2, pressing 20 x1 -> 420 / 6
   assert.equal(fit.score, 70);
   assert.deepEqual(fit.items.map((i) => i.value), [80, 80, 20]);
   assert.equal(fit.measured, 3);
@@ -31,7 +30,6 @@ test("leaves out attributes with no evidence and reports coverage", () => {
 
 test("under half the weighted profile measured means not enough evidence", () => {
   const fit = fitScore(items, { finishing: { match: 99 }, pressing: { match: 99 } });
-  // 3 of 6 weight measured is exactly half: still scored
   assert.equal(fit.coverage, 0.5);
   assert.equal(fit.score, 99);
   const thin = fitScore(items, { finishing: { match: 99 } });

@@ -71,15 +71,17 @@ METRICS = [
     Metric("shots_on_target", "Shots on target", lambda d: (d["type"] == "shot") & d["outcome"].isin(ON_TARGET)),
     Metric("long_passes", "Long passes", lambda d: (d["type"] == "pass") & (_length(d) >= LONG_PASS)),
     Metric("pressures", "Pressures", _is("pressure")),
-    Metric("through_balls_received", "Through balls received", lambda d: (d["type"] == "ball_receipt") & _extra_flag(d, "through_ball")),
+    Metric("through_balls_received", "Through balls received",
+           lambda d: (d["type"] == "ball_receipt") & (d["outcome"] == "complete") & _extra_flag(d, "through_ball")),
     Metric("receptions_in_box", "Receptions in the box",
            lambda d: (d["type"] == "ball_receipt") & (d["outcome"] == "complete") & _in_box(d)),
     Metric("blocks", "Blocks", _is("block")),
     Metric("aerial_duels_won", "Aerial duels won", lambda d: _extra_flag(d, "aerial_won")),
     Metric("ball_losses", "Ball losses", lambda d: d["type"].isin(["miscontrol", "dispossessed"])),
-    Metric("saves", "Saves", lambda d: (d["type"] == "goalkeeper") & d["extra"].map(lambda e: str(e.get("gk_type", "")).startswith("shot_saved"))),
+    Metric("saves", "Saves", lambda d: (d["type"] == "goalkeeper") & d["extra"].map(
+        lambda e: str(e.get("gk_type", "")).startswith("shot_saved") or e.get("gk_type") in ("penalty_saved", "save"))),
     Metric("crosses_claimed", "Crosses claimed",
-           lambda d: (d["type"] == "goalkeeper") & (_extra_is(d, "gk_type", {"collected"}) | (d["outcome"] == "claim"))),
+           lambda d: (d["type"] == "goalkeeper") & _extra_is(d, "gk_type", {"collected"}) & d["outcome"].isin(["success", "collected_twice"])),
 ]
 
 
@@ -88,24 +90,26 @@ class Ratio(NamedTuple):
     label: str
     num: Callable[[pd.DataFrame], pd.Series]
     den: Callable[[pd.DataFrame], pd.Series]
-    min_den: int  # below this many attempts the share is noise, so it is left empty
+    min_attempts: int
 
 
 def _under_pressure(d):
     return _extra_flag(d, "under_pressure")
 
 
-# Shares in percent (0..100), not per 90. Keys end in _pct so the web app labels them as shares.
+def _received_under_pressure(d):
+    return (d["type"] == "ball_receipt") & (d["outcome"] == "complete") & _under_pressure(d)
+
+
+def _kept_under_pressure(d):
+    return _received_under_pressure(d).astype(float) - ((d["type"] == "miscontrol") & _under_pressure(d)).astype(float)
+
+
 RATIOS = [
     Ratio("pass_accuracy_pct", "Pass accuracy", lambda d: (d["type"] == "pass") & (d["outcome"] == "complete"), _is("pass"), 10),
     Ratio("dribble_success_pct", "Dribble success", lambda d: (d["type"] == "dribble") & (d["outcome"] == "complete"), _is("dribble"), 5),
     Ratio("tackle_success_pct", "Tackle success", lambda d: (d["type"] == "tackle") & d["outcome"].isin(WON), _is("tackle"), 5),
-    # Kept = received under pressure without a miscontrol under pressure. Partly match data: a heavy touch
-    # that still leads to a dispossession a second later is not counted as a lost reception.
-    Ratio("first_touch_under_pressure_pct", "First touch under pressure",
-          lambda d: ((d["type"] == "ball_receipt") & (d["outcome"] == "complete") & _under_pressure(d)).astype(float)
-          - ((d["type"] == "miscontrol") & _under_pressure(d)).astype(float),
-          lambda d: (d["type"] == "ball_receipt") & (d["outcome"] == "complete") & _under_pressure(d), 5),
+    Ratio("first_touch_under_pressure_pct", "First touch under pressure", _kept_under_pressure, _received_under_pressure, 5),
 ]
 KEYS = [m.key for m in METRICS] + [r.key for r in RATIOS]
 
@@ -128,12 +132,11 @@ def compute_season_metrics(events: pd.DataFrame, lineups: pd.DataFrame, min_minu
     per90 = df[[m.key for m in METRICS]].div(df["minutes"], axis=0) * 90
     for r in RATIOS:
         den = df[f"{r.key}:den"]
-        per90[r.key] = (df[f"{r.key}:num"] / den * 100).where(den >= r.min_den)
+        per90[r.key] = (df[f"{r.key}:num"] / den * 100).where(den >= r.min_attempts)
     q = df["minutes"] >= min_minutes
     roles = df["role"][q]
     pct = (per90[q].groupby(roles).rank(pct=True) * 100).round()
     std = per90[q].groupby(roles).transform("std", ddof=0)
-    # a missing share sits at the position mean, so it neither helps nor hurts similarity
     z = ((per90[q] - per90[q].groupby(roles).transform("mean")) / std.where(std > 0)).fillna(0.0)
 
     out = df[["player_id", "role", "minutes"]].copy()
@@ -144,19 +147,15 @@ def compute_season_metrics(events: pd.DataFrame, lineups: pd.DataFrame, min_minu
 
 
 def attribute_percentiles(out: pd.DataFrame, attributes: dict[str, list[str]]) -> list[dict]:
-    """Per row: for each attribute with stand-in metrics, the mean of the metric percentiles that exist,
-    ranked within the role (0..100). Rows without percentiles get none.
-    A metric counts only in roles where at least half the ranked players record it: otherwise one dribble by a
-    goalkeeper ranks him first and reads as a standout quality."""
     ranked = out["percentiles"].map(bool)
     per90 = pd.DataFrame(list(out["per90"]), index=out.index).fillna(0)
     active = (per90[ranked] > 0).groupby(out["role"][ranked]).mean() >= 0.5
 
-    def counts(role, m):
+    def recorded_by_most(role, m):
         return m in active.columns and role in active.index and bool(active.at[role, m])
 
     means = pd.DataFrame(
-        [{a: pd.Series([p[m] for m in ms if m in p and counts(role, m)], dtype=float).mean() for a, ms in attributes.items() if ms}
+        [{a: pd.Series([p[m] for m in ms if m in p and recorded_by_most(role, m)], dtype=float).mean() for a, ms in attributes.items() if ms}
          for role, p in zip(out["role"], out["percentiles"])],
         index=out.index)
     pct = (means.groupby(out["role"]).rank(pct=True) * 100).round()
@@ -169,9 +168,6 @@ MATCH_MIN_MINUTES = 30
 
 
 def match_index(events: pd.DataFrame, lineups: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
-    """One 0..100 number per player per match (30+ minutes): the player's per-90 counts in that match are z-scored
-    against every match by a player in the same role, averaged (ball losses count against), and ranked within the role.
-    An opponent is stronger when its goal difference per match in the competition beats the player's own team's."""
     lu = lineups[lineups["minutes_played"] >= MATCH_MIN_MINUTES]
     ev = events.merge(lu[["match_id", "player_id"]], on=["match_id", "player_id"])
     counts = pd.DataFrame({m.key: m.value(ev).astype(float) for m in METRICS}, index=ev.index)
@@ -203,7 +199,6 @@ def age_band(age):
 
 
 def band_percentiles(res: pd.DataFrame, birth_years: dict, year: int) -> pd.DataFrame:
-    """Percentiles within role x age band (U17, U19, U21, senior), for players who qualify and have a birth year."""
     bands = res["player_id"].map(lambda p: age_band(year - birth_years[p]) if birth_years.get(p) else None)
     q = res["style"].notna() & bands.notna()
     per90 = pd.DataFrame(list(res["per90"]), index=res.index)[KEYS].astype(float)
@@ -218,8 +213,6 @@ def band_percentiles(res: pd.DataFrame, birth_years: dict, year: int) -> pd.Data
 
 
 def add_value_metric(res: pd.DataFrame, lineups: pd.DataFrame, per_match: pd.DataFrame, key: str) -> pd.DataFrame:
-    """Fold a per-match value (xT) into per90 and percentiles, attributed to the role held in each match.
-    It stays out of the style vector, which is built from METRICS only."""
     v = per_match.merge(lineups[["match_id", "player_id", "position"]], on=["match_id", "player_id"])
     sums = v.groupby(["player_id", "position"])["value"].sum()
     value = pd.Series([sums.get((p, r), 0.0) for p, r in zip(res["player_id"], res["role"])], index=res.index)
@@ -233,7 +226,6 @@ def add_value_metric(res: pd.DataFrame, lineups: pd.DataFrame, per_match: pd.Dat
 
 
 def load_competition(cur, comp_id):
-    """Only published matches feed profiles."""
     cur.execute(
         "select e.match_id, e.player_id, e.team_id, e.type, e.outcome, e.x, e.y, e.end_x, e.end_y, e.extra "
         "from events e join matches m on m.id = e.match_id where m.competition_id = %s and m.status = 'published'", (comp_id,))

@@ -2,9 +2,6 @@
 
     uv run --python 3.12 python seed_demo.py           # create or refresh (idempotent)
     uv run --python 3.12 python seed_demo.py --remove  # delete every demo row and value
-
-Rules: every demo row has is_demo = true; demo values inside a real row are named in players.demo_fields;
-a value that already exists is never overwritten; match events and the numbers computed from them are never touched.
 """
 import argparse
 import datetime as dt
@@ -17,8 +14,8 @@ import psycopg
 DEFAULT_DB = "postgres://postgres:postgres@localhost:54330/postgres"
 NS = uuid.uuid5(uuid.NAMESPACE_URL, "scout-platform/demo")
 TODAY = dt.date(2026, 11, 21)
-DEMO_PASSWORD = "scout-demo"  # every demo login; see README
-UNDER_18 = 6  # profiles that land in the approval queue once phase 4 applies the age rule
+DEMO_PASSWORD = "scout-demo"
+UNDER_18_PLAYERS = 6
 
 
 def did(*parts):
@@ -37,7 +34,6 @@ ORGS = [
     ("academy", "Lusaka Demo Academy", "academy"),
     ("internal", "Scout staff (demo)", "internal"),
 ]
-# key, org, role, name; one user of each type, plus a second scout and analyst for the multi-report and QC screens
 USERS = [
     ("scout", "club", "scout", "Sara Lind"),
     ("scout2", "club2", "scout", "Erik Holm"),
@@ -53,7 +49,7 @@ USERS = [
 ]
 AVAILABILITY = ["available", "open_to_offers", "not_available"]
 CONDITIONS = ["Transfer fee negotiable", "Loan with option to buy", "Free at contract end", "Release clause in contract"]
-TESTS = {  # mean, sd, decimals: a realistic spread for senior and youth African players
+TESTS = {
     "sprint_10m": (1.78, 0.07, 2),
     "sprint_30m": (4.20, 0.15, 2),
     "endurance": (18.6, 1.2, 1),
@@ -63,7 +59,6 @@ HEIGHT_BY_ROLE = {"GK": 189, "CB": 186, "ST": 182, "DM": 180, "CM": 178, "FB": 1
 
 
 def birth_year(r, minutes):
-    """Ages 18 to 35 for players with real minutes; the youngest band goes to fringe squad players."""
     age = int(r.triangular(18, 35, 26)) if minutes >= 90 else r.choice([18, 19, 20, 21, 22, 23, 24])
     return TODAY.year - age
 
@@ -81,7 +76,6 @@ def seed(cur):
         cur.execute("insert into app_users (id, org_id, role, display_name, email, is_demo) values (%s,%s,%s,%s,%s,true) "
                     "on conflict (id) do update set org_id=excluded.org_id, role=excluded.role, display_name=excluded.display_name, email=excluded.email",
                     (uid, did("org", org) if org else None, role, name, email))
-    # coverage: both clubs and the agency buy the competition; the federation owns it
     cur.execute("select id from competitions")
     for (cid,) in cur.fetchall():
         for org in ("club", "club2", "agency", "federation", "academy"):
@@ -94,7 +88,7 @@ def seed(cur):
         from players p left join lineups l on l.player_id = p.id
         group by p.id order by minutes, p.id""")
     players = cur.fetchall()
-    young = {p[0] for p in players[:UNDER_18] if p[2] is None}
+    young = {p[0] for p in players[:UNDER_18_PLAYERS] if p[2] is None}
     for pid, role, by, height, foot, demo, minutes in players:
         fields = set(demo)
         if by is None:
@@ -118,7 +112,7 @@ def seed(cur):
              r.choice(["Partner Agency (demo)", "Independent agent (demo)", None])))
 
         r = rng("tests", pid)
-        if r.random() < 0.6:  # a little over half the players have been tested
+        if r.random() < 0.6:
             when = TODAY - dt.timedelta(days=r.randint(20, 300))
             verified = r.random() < 0.5
             for test, (mean, sd, dp) in TESTS.items():
@@ -132,14 +126,12 @@ def seed(cur):
     print(f"demo: {len(ORGS)} orgs, {len(USERS)} users, {len(players)} players filled, {cur.fetchone()[0]} under 18")
 
 
-REPORTED = 60  # players with the most minutes get reports
+REPORTED = 60
 SEEN_IN = ["Two matches on video and one live", "Live at the tournament", "Full matches on video, plus a call with his coach",
            "Training week and two matches", "Video of every match he started"]
 
 
 def seed_reports(cur):
-    """One or two demo scouts report on each of the top players; ratings follow the match evidence with noise,
-    so the screens show both agreement and disagreement between the numbers and the eye."""
     cur.execute("select key, label, grp from attributes order by sort")
     attrs = cur.fetchall()
     cur.execute("""
@@ -158,7 +150,7 @@ def seed_reports(cur):
             ratings = {}
             for key, _label, grp in attrs:
                 if grp != "mental" and r.random() < 0.3:
-                    continue  # any rating can be left empty
+                    continue
                 base = pct.get(key, 62) / 10 + (0.8 if author == "scout2" else 0)
                 ratings[key] = max(1, min(10, round(r.gauss(base, 1.6))))
             label = {k: l for k, l, _ in attrs}
@@ -180,9 +172,8 @@ def seed_reports(cur):
 
 
 def seed_workflow(cur):
-    """Signed-up players, consent, approval queue, verifications, shortlists, a saved search, agent clients."""
     year = TODAY.year
-    signups = [  # key, name, age, user who claims it, guardian
+    signups = [
         ("kofi", "Kofi Mensah (demo)", 19, "player", None),
         ("yaw", "Yaw Mensah (demo)", 16, None, "guardian"),
     ]
@@ -204,7 +195,7 @@ def seed_workflow(cur):
 
     cur.execute("select id from players where origin = 'match_data' and status = 'live' order by id limit 40")
     live = [r[0] for r in cur.fetchall()]
-    for i, pid in enumerate(live[:25]):  # the federation has checked some of its competition's players
+    for i, pid in enumerate(live[:25]):
         r = rng("verify", pid)
         done = i % 3 != 2
         cur.execute(
@@ -232,7 +223,6 @@ def seed_workflow(cur):
 
 
 def foreign_keys(cur, target):
-    """(table, column) pairs that reference target(id), found in the catalogue so new tables are covered too."""
     cur.execute("""
         select c.conrelid::regclass::text, a.attname from pg_constraint c
         join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
@@ -241,7 +231,6 @@ def foreign_keys(cur, target):
 
 
 def remove(cur):
-    """Every demo row, every row that points at one, and every row a demo account created through the app."""
     cur.execute("select coalesce(array_agg(id), '{}') from players where is_demo")
     players = cur.fetchone()[0]
     cur.execute("select coalesce(array_agg(id), '{}') from app_users where is_demo")
@@ -250,7 +239,7 @@ def remove(cur):
     orgs = cur.fetchone()[0]
     for target, ids in (("players", players), ("app_users", users), ("orgs", orgs)):
         for table, col in foreign_keys(cur, target):
-            if table == "players":  # a real player keeps his profile; only the link to a demo account goes
+            if table == "players":
                 cur.execute(f"update players set {col} = null where {col} = any(%s)", (ids,))
             elif table not in ("app_users",):
                 cur.execute(f"delete from {table} where {col} = any(%s)", (ids,))
