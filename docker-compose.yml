@@ -10,6 +10,8 @@ services:
       - ./supabase/migrations/20261111000000_init.sql:/docker-entrypoint-initdb.d/10_init.sql:ro
       - ./supabase/migrations/20261111000001_player_photos.sql:/docker-entrypoint-initdb.d/11_player_photos.sql:ro
       - ./supabase/migrations/20261121000000_phase1_scouting.sql:/docker-entrypoint-initdb.d/20_phase1_scouting.sql:ro
+      - ./supabase/migrations/20261121000100_phase2_scout_reports.sql:/docker-entrypoint-initdb.d/21_phase2_scout_reports.sql:ro
+      - ./supabase/migrations/20261121000200_phase3_risk_market.sql:/docker-entrypoint-initdb.d/22_phase3_risk_market.sql:ro
       - dbdata:/var/lib/postgresql/data
 volumes:
   dbdata:

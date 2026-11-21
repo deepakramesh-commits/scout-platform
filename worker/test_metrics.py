@@ -123,3 +123,60 @@ def test_attribute_metrics_exist_in_registry():
     arrays = re.findall(r"'(?:technical|physical|tactical|mental)', '\w+', '\{([a-z_0-9,]*)\}'", sql)
     assert len(arrays) == 30
     assert {k for a in arrays for k in a.split(",") if k} <= set(KEYS)
+
+
+def test_match_index_ranks_each_match_within_role_and_marks_stronger_opponents():
+    from metrics import match_index
+    events = pd.DataFrame([
+        {**ev("a", "shot", outcome="goal"), "match_id": "m1", "team_id": "A"},
+        {**ev("a", "shot"), "match_id": "m1", "team_id": "A"},
+        {**ev("b", "shot", outcome="goal"), "match_id": "m2", "team_id": "B"},
+        {**ev("c", "shot", outcome="goal"), "match_id": "m2", "team_id": "B"},
+        {**ev("a", "pass", outcome="complete"), "match_id": "m2", "team_id": "A"},
+    ])
+    lu = pd.DataFrame([
+        {"match_id": "m1", "player_id": "a", "team_id": "A", "position": "ST", "minutes_played": 90},
+        {"match_id": "m1", "player_id": "x", "team_id": "C", "position": "ST", "minutes_played": 90},
+        {"match_id": "m2", "player_id": "a", "team_id": "A", "position": "ST", "minutes_played": 90},
+        {"match_id": "m2", "player_id": "b", "team_id": "B", "position": "ST", "minutes_played": 90},
+        {"match_id": "m2", "player_id": "c", "team_id": "B", "position": "ST", "minutes_played": 20},
+    ])
+    matches = pd.DataFrame([{"id": "m1", "home_team_id": "A", "away_team_id": "C"}, {"id": "m2", "home_team_id": "A", "away_team_id": "B"}])
+    out = match_index(events, lu, matches).set_index(["player_id", "match_id"])
+    assert ("c", "m2") not in out.index  # under 30 minutes
+    assert out.loc[("a", "m1"), "index"] > out.loc[("x", "m1"), "index"]
+    assert out.loc[("a", "m1"), "index"] == 100 and 0 <= out.loc[("x", "m1"), "index"] <= 100
+    # A: +1 then -2 = -0.5 per match; B: +2; C: -1. B is stronger than A, C is not
+    assert bool(out.loc[("a", "m2"), "opponent_stronger"]) and not bool(out.loc[("a", "m1"), "opponent_stronger"])
+    assert out.loc[("a", "m2"), "opponent_team_id"] == "B"
+
+
+def test_ball_losses_count_against_the_match_index():
+    from metrics import match_index
+    events = pd.DataFrame([{**ev("a", "miscontrol"), "team_id": "A"}, {**ev("a", "dispossessed"), "team_id": "A"}])
+    lu = pd.DataFrame([
+        {"match_id": "m1", "player_id": "a", "team_id": "A", "position": "CM", "minutes_played": 90},
+        {"match_id": "m1", "player_id": "b", "team_id": "B", "position": "CM", "minutes_played": 90},
+    ])
+    out = match_index(events, lu, pd.DataFrame([{"id": "m1", "home_team_id": "A", "away_team_id": "B"}])).set_index("player_id")
+    assert out.loc["a", "index"] < out.loc["b", "index"]
+
+
+def test_age_band_percentiles_rank_within_role_and_band():
+    from metrics import age_band, band_percentiles
+    assert [age_band(a) for a in (15, 16, 17, 18, 19, 20, 21, None)] == ["U17", "U17", "U19", "U19", "U21", "U21", "senior", None]
+    events = pd.DataFrame([ev("a", "shot"), ev("a", "shot"), ev("b", "shot"), ev("c", "shot"), ev("c", "shot"), ev("c", "shot")])
+    res = compute_season_metrics(events, lineups([("a", "ST", 90), ("b", "ST", 90), ("c", "ST", 90)]), 90)
+    bands = band_percentiles(res, {"a": 2007, "b": 2007, "c": 1995}, 2026).set_index(res["player_id"])
+    assert bands.loc["a", "age_band"] == "U21" and bands.loc["a", "band_peers"] == 2
+    assert bands.loc["a", "band_percentiles"]["shots"] == 100 and bands.loc["b", "band_percentiles"]["shots"] == 50
+    assert bands.loc["c", "band_peers"] == 1
+
+
+def test_value_metric_is_per90_by_role_and_ranked():
+    from metrics import add_value_metric
+    res = compute_season_metrics(pd.DataFrame([ev("a", "pass"), ev("b", "pass")]), lineups([("a", "CM", 90), ("b", "CM", 45)]), 0)
+    per_match = pd.DataFrame([{"match_id": "m1", "player_id": "a", "value": 0.2}, {"match_id": "m1", "player_id": "b", "value": 0.2}])
+    out = add_value_metric(res, lineups([("a", "CM", 90), ("b", "CM", 45)]), per_match, "xt").set_index("player_id")
+    assert out.loc["a", "per90"]["xt"] == 0.2 and out.loc["b", "per90"]["xt"] == 0.4
+    assert out.loc["b", "percentiles"]["xt"] == 100 and out.loc["a", "percentiles"]["xt"] == 50

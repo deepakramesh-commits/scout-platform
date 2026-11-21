@@ -1,4 +1,5 @@
 import argparse
+import datetime as dt
 import os
 from typing import Callable, NamedTuple
 
@@ -152,33 +153,117 @@ def attribute_percentiles(out: pd.DataFrame, attributes: dict[str, list[str]]) -
     return [{a: int(v) for a, v in row.items() if v == v} for row in ranked.to_dict("records")]
 
 
+COUNT_KEYS = [m.key for m in METRICS]
+LOWER_IS_BETTER = {"ball_losses"}
+MATCH_MIN_MINUTES = 30
+
+
+def match_index(events: pd.DataFrame, lineups: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
+    """One 0..100 number per player per match (30+ minutes): the player's per-90 counts in that match are z-scored
+    against every match by a player in the same role, averaged (ball losses count against), and ranked within the role.
+    An opponent is stronger when its goal difference per match in the competition beats the player's own team's."""
+    lu = lineups[lineups["minutes_played"] >= MATCH_MIN_MINUTES]
+    ev = events.merge(lu[["match_id", "player_id"]], on=["match_id", "player_id"])
+    counts = pd.DataFrame({m.key: m.value(ev).astype(float) for m in METRICS}, index=ev.index)
+    counts[["match_id", "player_id"]] = ev[["match_id", "player_id"]]
+    totals = counts.groupby(["match_id", "player_id"])[COUNT_KEYS].sum()
+    df = lu.set_index(["match_id", "player_id"]).join(totals).fillna({k: 0.0 for k in COUNT_KEYS}).reset_index()
+    per90 = df[COUNT_KEYS].div(df["minutes_played"], axis=0) * 90
+    per90[list(LOWER_IS_BETTER)] *= -1
+    std = per90.groupby(df["position"]).transform("std", ddof=0)
+    z = ((per90 - per90.groupby(df["position"]).transform("mean")) / std.where(std > 0)).fillna(0.0)
+    df["index"] = (z.mean(axis=1).groupby(df["position"]).rank(pct=True) * 100).round().astype(int)
+
+    goals = events[(events["type"] == "shot") & (events["outcome"] == "goal")].groupby(["match_id", "team_id"]).size()
+    sides = pd.concat([matches.rename(columns={"home_team_id": "team", "away_team_id": "opp"}),
+                       matches.rename(columns={"away_team_id": "team", "home_team_id": "opp"})])[["id", "team", "opp"]]
+    sides["gd"] = [goals.get((m, t), 0) - goals.get((m, o), 0) for m, t, o in sides[["id", "team", "opp"]].itertuples(index=False)]
+    strength = sides.groupby("team")["gd"].mean()
+    opp = sides.set_index(["id", "team"])["opp"]
+    df["opponent_team_id"] = [opp[(m, t)] for m, t in zip(df["match_id"], df["team_id"])]
+    df["opponent_stronger"] = df["opponent_team_id"].map(strength) > df["team_id"].map(strength)
+    return df.rename(columns={"position": "role", "minutes_played": "minutes"})[
+        ["player_id", "match_id", "role", "minutes", "index", "opponent_team_id", "opponent_stronger"]]
+
+
+def age_band(age):
+    if age is None or age != age:
+        return None
+    return "U17" if age < 17 else "U19" if age < 19 else "U21" if age < 21 else "senior"
+
+
+def band_percentiles(res: pd.DataFrame, birth_years: dict, year: int) -> pd.DataFrame:
+    """Percentiles within role x age band (U17, U19, U21, senior), for players who qualify and have a birth year."""
+    bands = res["player_id"].map(lambda p: age_band(year - birth_years[p]) if birth_years.get(p) else None)
+    q = res["style"].notna() & bands.notna()
+    per90 = pd.DataFrame(list(res["per90"]), index=res.index)[KEYS].astype(float)
+    groups = [res["role"][q], bands[q]]
+    pct = (per90[q].groupby(groups).rank(pct=True) * 100).round()
+    peers = res[q].groupby(groups)["player_id"].transform("count")
+    return pd.DataFrame({
+        "age_band": bands,
+        "band_percentiles": [{k: int(v) for k, v in pct.loc[i].items() if v == v} if i in pct.index else {} for i in res.index],
+        "band_peers": [int(peers[i]) if i in peers.index else 0 for i in res.index],
+    }, index=res.index)
+
+
+def add_value_metric(res: pd.DataFrame, lineups: pd.DataFrame, per_match: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Fold a per-match value (xT) into per90 and percentiles, attributed to the role held in each match.
+    It stays out of the style vector, which is built from METRICS only."""
+    v = per_match.merge(lineups[["match_id", "player_id", "position"]], on=["match_id", "player_id"])
+    sums = v.groupby(["player_id", "position"])["value"].sum()
+    value = pd.Series([sums.get((p, r), 0.0) for p, r in zip(res["player_id"], res["role"])], index=res.index)
+    per90 = value / res["minutes"] * 90
+    q = res["style"].notna()
+    pct = (per90[q].groupby(res["role"][q]).rank(pct=True) * 100).round()
+    out = res.copy()
+    out["per90"] = [{**p, key: round(float(per90[i]), 4)} for i, p in zip(res.index, res["per90"])]
+    out["percentiles"] = [{**p, key: int(pct[i])} if i in pct.index else p for i, p in zip(res.index, res["percentiles"])]
+    return out
+
+
 def load_competition(cur, comp_id):
     """Only published matches feed profiles."""
     cur.execute(
-        "select e.match_id, e.player_id, e.type, e.outcome, e.x, e.y, e.end_x, e.end_y, e.extra "
+        "select e.match_id, e.player_id, e.team_id, e.type, e.outcome, e.x, e.y, e.end_x, e.end_y, e.extra "
         "from events e join matches m on m.id = e.match_id where m.competition_id = %s and m.status = 'published'", (comp_id,))
     events = pd.DataFrame(cur.fetchall(), columns=[d.name for d in cur.description]).astype(
         {c: float for c in ("x", "y", "end_x", "end_y")})
     cur.execute(
-        "select l.match_id, l.player_id, l.position, l.minutes_played "
+        "select l.match_id, l.player_id, l.team_id, l.position, l.minutes_played "
         "from lineups l join matches m on m.id = l.match_id where m.competition_id = %s and m.status = 'published'", (comp_id,))
     lineups = pd.DataFrame(cur.fetchall(), columns=[d.name for d in cur.description])
-    return events, lineups
+    cur.execute("select id, home_team_id, away_team_id from matches where competition_id = %s and status = 'published'", (comp_id,))
+    matches = pd.DataFrame(cur.fetchall(), columns=[d.name for d in cur.description])
+    return events, lineups, matches
 
 
 def compute_competition(cur, comp_id, min_minutes, attributes):
-    events, lineups = load_competition(cur, comp_id)
+    from xt import competition_xt
+
+    events, lineups, matches = load_competition(cur, comp_id)
     cur.execute("delete from player_season_metrics where competition_id = %s", (comp_id,))
+    cur.execute("delete from player_match_index where competition_id = %s", (comp_id,))
     if events.empty:
         return None
     res = compute_season_metrics(events, lineups, min_minutes)
+    res = add_value_metric(res, lineups, competition_xt(cur, comp_id), "xt")
     res["attr_percentiles"] = attribute_percentiles(res, attributes)
     res["peers"] = res["role"].map(res[res["style"].notna()]["role"].value_counts()).fillna(0).astype(int)
+    cur.execute("select id, birth_year from players where birth_year is not null")
+    res = res.join(band_percentiles(res, dict(cur.fetchall()), dt.date.today().year))
     cur.executemany(
-        "insert into player_season_metrics (player_id, competition_id, role, minutes, per90, percentiles, style, attr_percentiles, peers) "
-        "values (%s,%s,%s,%s,%s,%s,%s::vector,%s,%s)",
+        "insert into player_season_metrics (player_id, competition_id, role, minutes, per90, percentiles, style, attr_percentiles, peers, "
+        "age_band, band_percentiles, band_peers) values (%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s)",
         [(r.player_id, comp_id, r.role, int(r.minutes), Jsonb(r.per90), Jsonb(r.percentiles),
-          None if r.style is None else str(r.style), Jsonb(r.attr_percentiles), int(r.peers)) for r in res.itertuples()])
+          None if r.style is None else str(r.style), Jsonb(r.attr_percentiles), int(r.peers),
+          r.age_band, Jsonb(r.band_percentiles), int(r.band_peers)) for r in res.itertuples()])
+    idx = match_index(events, lineups, matches)
+    cur.executemany(
+        "insert into player_match_index (player_id, match_id, competition_id, role, minutes, index, opponent_team_id, opponent_stronger) "
+        "values (%s,%s,%s,%s,%s,%s,%s,%s)",
+        [(r.player_id, r.match_id, comp_id, r.role, int(r.minutes), int(r.index), r.opponent_team_id, bool(r.opponent_stronger))
+         for r in idx.itertuples()])
     return res
 
 

@@ -2,10 +2,20 @@
 name = "scout-worker"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["statsbombpy", "pandas", "numpy", "psycopg[binary]"]
+dependencies = [
+    "statsbombpy",
+    "pandas",
+    "numpy",
+    "psycopg[binary]",
+    "socceraction>=1.5.3",
+    "multimethod<2",
+]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "kloppy>=3.19.1",
+    "pytest",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

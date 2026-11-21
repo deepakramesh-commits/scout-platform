@@ -37,6 +37,8 @@ OUTCOME_COL = {
     "Pass": "pass_outcome", "Shot": "shot_outcome", "Dribble": "dribble_outcome", "Duel": "duel_outcome",
     "Interception": "interception_outcome", "Ball Receipt*": "ball_receipt_outcome", "Goal Keeper": "goalkeeper_outcome",
 }
+SET_PIECE = {"Corner": "corner", "Free Kick": "free_kick", "Throw-in": "throw_in", "Goal Kick": "goal_kick",
+             "Kick Off": "kick_off", "Penalty": "penalty"}
 AERIAL_WON = ("pass_aerial_won", "clearance_aerial_won", "shot_aerial_won", "miscontrol_aerial_won")
 BODY_COL = {"pass": "pass_body_part", "shot": "shot_body_part", "clearance": "clearance_body_part"}
 END_COL = {"pass": "pass_end_location", "carry": "carry_end_location", "shot": "shot_end_location"}
@@ -87,6 +89,9 @@ def event_rows(match_id, team_ids, events):
                     extra[flag] = True
         if t == "foul_committed" and val(r, "foul_committed_card"):
             extra["card"] = slug(r["foul_committed_card"])
+        set_piece = SET_PIECE.get(val(r, "pass_type") if t == "pass" else val(r, "shot_type") if t == "shot" else None)
+        if set_piece:
+            extra["set_piece"] = set_piece
         if t == "shot" and val(r, "shot_first_time"):
             extra["first_time"] = True
         if t == "ball_receipt" and any(e in through_balls for e in val(r, "related_events") or []):
@@ -164,7 +169,8 @@ def main():
                 role = max(secs, key=secs.get)
                 players.setdefault(pid, [pid, val(p, "player_nickname") or p["player_name"], val(p, "country")])
                 role_minutes[pid][role] += minutes
-                lineups.append((mid, pid, team_ids[sb_team_by_name[team_name]], val(p, "jersey_number"), role, minutes))
+                started = p["positions"][0].get("start_reason") == "Starting XI"
+                lineups.append((mid, pid, team_ids[sb_team_by_name[team_name]], val(p, "jersey_number"), role, minutes, started))
 
     player_rows = [(*p, max(role_minutes[p[0]], key=role_minutes[p[0]].get)) for p in players.values()]
     known = {p[0] for p in player_rows}
@@ -191,9 +197,9 @@ def main():
             "on conflict (id) do update set competition_id=excluded.competition_id, home_team_id=excluded.home_team_id, "
             "away_team_id=excluded.away_team_id, kickoff_at=excluded.kickoff_at", matches)
         cur.executemany(
-            "insert into lineups (match_id, player_id, team_id, shirt_number, position, minutes_played) values (%s,%s,%s,%s,%s,%s) "
+            "insert into lineups (match_id, player_id, team_id, shirt_number, position, minutes_played, started) values (%s,%s,%s,%s,%s,%s,%s) "
             "on conflict (match_id, player_id) do update set team_id=excluded.team_id, shirt_number=excluded.shirt_number, "
-            "position=excluded.position, minutes_played=excluded.minutes_played", lineups)
+            "position=excluded.position, minutes_played=excluded.minutes_played, started=excluded.started", lineups)
         cur.executemany(
             "insert into events (id, match_id, player_id, team_id, period, video_seconds, type, outcome, x, y, end_x, end_y, body_part, extra) "
             "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
