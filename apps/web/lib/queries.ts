@@ -1,7 +1,7 @@
-import { sql } from "./db";
+import type { Q } from "./auth";
 
 // Team for alias `p` = the side they played for in their latest match. Exposes `lt.team`.
-export const latestTeam = () => sql`
+export const latestTeam = (q: Q) => q`
   left join lateral (
     select t.name as team from lineups l
     join matches mt on mt.id = l.match_id

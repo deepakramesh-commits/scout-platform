@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { sql } from "@/lib/db";
+import { db, requireScouting, type Q } from "@/lib/auth";
 import { fitScore, PRIORITY_LABEL, standouts, type Fit } from "@/lib/fit";
 import { ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
@@ -26,19 +26,24 @@ type Ranked = Candidate & { fit: Fit; demo: boolean };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
-const candidates = (p: Profile) => sql<Candidate[]>`
+const candidates = (tx: Q, p: Profile) => tx<Candidate[]>`
   select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.peers, m.attr_percentiles, p.birth_year,
          'birth_year' = any(p.demo_fields) as age_is_demo
   from players p
   join lateral (select * from player_season_metrics m where m.player_id = p.id order by m.minutes desc limit 1) m on true
-  ${latestTeam()}
+  ${latestTeam(tx)}
   where p.visible_to_scouts and m.role = any(${p.positions}::text[])
     and (${p.age_min}::int is null or ${SEASON_YEAR} - p.birth_year >= ${p.age_min})
     and (${p.age_max}::int is null or ${SEASON_YEAR} - p.birth_year <= ${p.age_max})`;
 
-export default async function FindByRole({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function FindByRole(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  await requireScouting();
+  return db((tx) => FindByRolePage(tx, props));
+}
+
+async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const q = await searchParams;
-  const [profiles, attributes] = await Promise.all([getProfiles(), getAttributes()]);
+  const [profiles, attributes] = await Promise.all([getProfiles(tx), getAttributes(tx)]);
   const labels = Object.fromEntries(attributes.map((a) => [a.key, a.label]));
 
   if (!profiles.length) {
@@ -54,8 +59,8 @@ export default async function FindByRole({ searchParams }: { searchParams: Promi
   }
 
   const profile = profiles.find((p) => p.id === first(q.profile)) ?? profiles[0];
-  const pool = await candidates(profile);
-  const evidence = await getEvidence(pool.map((c) => c.id));
+  const pool = await candidates(tx, profile);
+  const evidence = await getEvidence(tx, pool.map((c) => c.id));
   const ranked: Ranked[] = pool.map((c) => {
     const pe = evidence.get(c.id)!;
     return { ...c, fit: fitScore(profile.items, pe.evidence), demo: profile.items.some((i) => pe.demo.has(i.attribute)) };

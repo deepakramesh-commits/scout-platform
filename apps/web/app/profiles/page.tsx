@@ -6,6 +6,7 @@ import { Link } from "@astryxdesign/core/Link";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
+import { db, requireScouting, type Q } from "@/lib/auth";
 import { ROLE_NAMES } from "@/lib/metrics";
 import { ageRange, draftLabel, getAttributes, getProfiles, SOURCE_LABEL } from "@/lib/scouting";
 import { ProfileForm } from "./profile-form";
@@ -13,7 +14,12 @@ import { ProfileForm } from "./profile-form";
 export const dynamic = "force-dynamic";
 
 export default async function Profiles() {
-  const [profiles, attributes] = await Promise.all([getProfiles(), getAttributes()]);
+  await requireScouting();
+  return db((tx) => ProfilesPage(tx));
+}
+
+async function ProfilesPage(tx: Q) {
+  const [profiles, attributes] = await Promise.all([getProfiles(tx), getAttributes(tx)]);
   return (
     <VStack gap={6}>
       <VStack gap={1}>

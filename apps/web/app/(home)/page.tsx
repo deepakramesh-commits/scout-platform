@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { sql } from "@/lib/db";
+import { db, requireScouting, type Q } from "@/lib/auth";
 import type { ISODateString } from "@astryxdesign/core/Calendar";
 import { standouts } from "@/lib/fit";
 import { fmtMetric, fmtWithUnit, label, LOWER_IS_BETTER, metricKeys, metricLabel, PRESETS, ROLE_NAMES, unit } from "@/lib/metrics";
@@ -34,13 +34,18 @@ const isIsoDate = (v: string | undefined): v is ISODateString => v !== undefined
 // The featured prospect is the leader of the first preset, so it always matches a list the scout can open.
 const FEATURED = PRESETS[0];
 
-export default async function Search({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function Search(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  await requireScouting();
+  return db((tx) => SearchPage(tx, props));
+}
+
+async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const q = await searchParams;
-  const keys = await metricKeys(sql);
+  const keys = await metricKeys(tx);
   const [roles, countries, attributes] = await Promise.all([
-    sql<{ role: string }[]>`select distinct role from player_season_metrics order by 1`.then((rs) => rs.map((r) => r.role)),
-    sql<{ c: string }[]>`select distinct nationality as c from players where nationality is not null and visible_to_scouts order by 1`.then((rs) => rs.map((r) => r.c)),
-    getAttributes(),
+    tx<{ role: string }[]>`select distinct role from player_season_metrics order by 1`.then((rs) => rs.map((r) => r.role)),
+    tx<{ c: string }[]>`select distinct nationality as c from players where nationality is not null and visible_to_scouts order by 1`.then((rs) => rs.map((r) => r.c)),
+    getAttributes(tx),
   ]);
   const attrLabels = Object.fromEntries(attributes.map((a) => [a.key, a.label]));
 
@@ -60,29 +65,29 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   const initial = { role, sort, minPct, name, minMinutes: minMinutes || null, country, ageMin, ageMax, contractBy };
 
   const [[kpi], [featured], rows] = await Promise.all([
-    sql<Kpis[]>`
+    tx<Kpis[]>`
       select (select count(*)::int from players where visible_to_scouts) as players,
              (select count(*)::int from matches) as matches,
              (select count(*)::int from teams) as nations,
              (select count(*)::int from events) as events,
              (select count(distinct m.player_id)::int from player_season_metrics m join players p on p.id = m.player_id
                where p.visible_to_scouts and m.style is not null) as qualified`,
-    sql<Featured[]>`
+    tx<Featured[]>`
       select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
       from player_season_metrics m
       join players p on p.id = m.player_id
-      ${latestTeam()}
+      ${latestTeam(tx)}
       where p.visible_to_scouts and m.role = ${FEATURED.role} and (m.percentiles ->> ${FEATURED.sort}) is not null
       order by (m.per90 ->> ${FEATURED.sort})::float8 desc
       limit 1`,
     sort
-      ? sql<Row[]>`
+      ? tx<Row[]>`
           select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes,
                  (m.per90 ->> ${sort})::float8 as value, (m.percentiles ->> ${sort})::int as pct, m.peers, m.attr_percentiles
           from player_season_metrics m
           join players p on p.id = m.player_id
           left join player_market pm on pm.player_id = p.id
-          ${latestTeam()}
+          ${latestTeam(tx)}
           where p.visible_to_scouts
             and (${role}::text is null or m.role = ${role})
             and (${name}::text is null or p.display_name ilike '%' || ${name} || '%')

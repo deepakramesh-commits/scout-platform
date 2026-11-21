@@ -1,4 +1,4 @@
-import { sql } from "./db";
+import type { Q } from "./auth";
 import type { Evidence, FitItem } from "./fit";
 
 export type Source = "match" | "partly_match" | "scout" | "physical_test";
@@ -28,11 +28,11 @@ export const draftLabel = (p: Pick<Profile, "is_draft" | "club">) =>
 export const ageRange = ({ age_min: lo, age_max: hi }: Pick<Profile, "age_min" | "age_max">) =>
   lo != null && hi != null ? `aged ${lo} to ${hi}` : lo != null ? `aged ${lo} or over` : hi != null ? `aged ${hi} or under` : null;
 
-export const getAttributes = () =>
-  sql<Attribute[]>`select key, label, grp, source, metrics, test, description from attributes order by sort`;
+export const getAttributes = (q: Q) =>
+  q<Attribute[]>`select key, label, grp, source, metrics, test, description from attributes order by sort`;
 
-export const getProfiles = () =>
-  sql<Profile[]>`
+export const getProfiles = (q: Q) =>
+  q<Profile[]>`
     select r.id, r.name, r.club, r.positions, r.age_min, r.age_max, r.is_draft, r.note,
            coalesce(jsonb_agg(jsonb_build_object('attribute', i.attribute, 'priority', i.priority)
              order by array_position('{very_high,high,medium}'::text[], i.priority), a.sort)
@@ -43,7 +43,7 @@ export const getProfiles = () =>
     group by r.id
     order by r.created_at, r.id`;
 
-const rankedTests = () => sql`
+const rankedTests = (q: Q) => q`
   latest as (
     select distinct on (player_id, test) player_id, test, value, unit, tested_at, verified, is_demo
     from physical_tests order by player_id, test, tested_at desc
@@ -57,22 +57,22 @@ export type TestResult = {
   test: string; label: string; value: number; unit: string; tested_at: Date; verified: boolean; is_demo: boolean; pct: number;
 };
 
-export const getTests = (playerId: string) =>
-  sql<TestResult[]>`
-    with ${rankedTests()}
+export const getTests = (q: Q, playerId: string) =>
+  q<TestResult[]>`
+    with ${rankedTests(q)}
     select test, label, value::float8 as value, unit, tested_at, verified, is_demo, pct
     from ranked where player_id = ${playerId} order by label`;
 
-export async function getEvidence(playerIds: string[]): Promise<Map<string, PlayerEvidence>> {
+export async function getEvidence(q: Q, playerIds: string[]): Promise<Map<string, PlayerEvidence>> {
   const out = new Map<string, PlayerEvidence>(playerIds.map((id) => [id, { evidence: {}, demo: new Set() }]));
   if (!playerIds.length) return out;
   const [main, tests] = await Promise.all([
-    sql<{ player_id: string; attr_percentiles: Record<string, number> }[]>`
+    q<{ player_id: string; attr_percentiles: Record<string, number> }[]>`
       select distinct on (player_id) player_id, attr_percentiles
       from player_season_metrics where player_id = any(${playerIds}::uuid[])
       order by player_id, minutes desc`,
-    sql<{ player_id: string; attribute: string; pct: number; is_demo: boolean }[]>`
-      with ${rankedTests()}
+    q<{ player_id: string; attribute: string; pct: number; is_demo: boolean }[]>`
+      with ${rankedTests(q)}
       select r.player_id, a.key as attribute, r.pct, r.is_demo
       from ranked r join attributes a on a.test = r.test
       where r.player_id = any(${playerIds}::uuid[])`,

@@ -9,6 +9,10 @@ import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { Theme } from "@astryxdesign/core/theme";
 import { TopNav, TopNavHeading, TopNavItem } from "@astryxdesign/core/TopNav";
 import { defaultThemeSlug, themes } from "../astryx-themes";
+import { Button } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
+import { navFor, selected } from "@/lib/nav";
 import { AnchorFallback } from "./anchor-fallback";
 
 // A pitch seen from above: the brand mark.
@@ -20,8 +24,12 @@ const mark = (
   </svg>
 );
 
-export function Shell({ children, subheading }: { children: React.ReactNode; subheading: string }) {
+export type ShellUser = { name: string; role: string; org: string | null };
+
+export function Shell({ children, subheading, user }: { children: React.ReactNode; subheading: string; user: ShellUser | null }) {
   const path = usePathname();
+  const items = navFor(user?.role);
+  const current = selected(items, path);
   return (
     <Theme theme={themes[defaultThemeSlug]} mode="dark">
       <AnchorFallback />
@@ -33,14 +41,15 @@ export function Shell({ children, subheading }: { children: React.ReactNode; sub
             <TopNav
               label="Scout"
               heading={<TopNavHeading heading="Scout" subheading={subheading} headingHref="/" logo={<NavIcon icon={mark} />} />}
-              startContent={
-                <>
-                  <TopNavItem label="Search" href="/" isSelected={path === "/" || path.startsWith("/players")} />
-                  <TopNavItem label="Find by role" href="/roles" isSelected={path.startsWith("/roles")} />
-                  <TopNavItem label="Compare" href="/compare" isSelected={path.startsWith("/compare")} />
-                  <TopNavItem label="Profiles" href="/profiles" isSelected={path.startsWith("/profiles")} />
-                </>
-              }
+              startContent={items.length ? <>{items.map((i) => <TopNavItem key={i.href} label={i.label} href={i.href} isSelected={current === i.href} />)}</> : undefined}
+              endContent={user ? (
+                <HStack gap={2} vAlign="center">
+                  <Text type="supporting" color="secondary" maxLines={1}>{user.name}{user.org ? ` · ${user.org}` : ""}</Text>
+                  <form action="/logout" method="post"><Button type="submit" size="sm" variant="ghost" label="Sign out" /></form>
+                </HStack>
+              ) : (
+                <Button size="sm" variant="primary" label="Sign in" href="/login" />
+              )}
             />
           }
         >

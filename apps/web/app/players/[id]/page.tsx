@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { sql } from "@/lib/db";
+import { db, requireScouting } from "@/lib/auth";
 import { attributeValue, standouts } from "@/lib/fit";
 import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, ROLE_NAMES, rolePlural, smallGroupNote } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
@@ -59,24 +59,25 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 export default async function PlayerPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireScouting();
   const [{ id }, q] = await Promise.all([params, searchParams]);
   if (!UUID.test(id)) notFound();
   const tab = first(q.tab);
   const section: Section = isSection(tab) ? tab : "overview";
 
-  const [p] = await sql<Player[]>`
+  const [p] = await db((tx) => tx<Player[]>`
     select p.display_name, p.photo_url, p.photo_credit, p.photo_source_url, lt.team, m.role, m.minutes, m.per90, m.percentiles,
            m.attr_percentiles, m.peers, m.style is not null as has_style,
            p.birth_year, p.height_cm, p.preferred_foot, p.nationality, p.demo_fields,
            (select count(*)::int from lineups l where l.player_id = p.id and l.minutes_played > 0) as matches
     from players p
     join player_season_metrics m on m.player_id = p.id
-    ${latestTeam()}
+    ${latestTeam(tx)}
     where p.id = ${id} and p.visible_to_scouts
-    order by m.minutes desc limit 1`;
+    order by m.minutes desc limit 1`);
   if (!p) notFound();
 
-  const [attributes, profiles, evidence] = await Promise.all([getAttributes(), getProfiles(), getEvidence([id]).then((m) => m.get(id)!)]);
+  const [attributes, profiles, evidence] = await db((tx) => Promise.all([getAttributes(tx), getProfiles(tx), getEvidence(tx, [id]).then((m) => m.get(id)!)]));
   const attrs = new Map(attributes.map((a) => [a.key, a]));
   const fitParam = first(q.fit);
   const profile = profiles.find((r) => r.id === fitParam) ?? profiles.find((r) => r.positions.includes(p.role)) ?? profiles[0];
@@ -136,12 +137,12 @@ export default async function PlayerPage({ params, searchParams }: {
 }
 
 async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; attrs: Map<string, Attribute>; plural: string; fit: React.ReactNode }) {
-  const events = await sql<Ev[]>`
+  const events = await db((tx) => tx<Ev[]>`
     select type, x::float8 as x, y::float8 as y, end_x::float8 as end_x, end_y::float8 as end_y, (extra ->> 'xg')::float8 as xg
     from events
     where player_id = ${id} and x is not null and (
       type in ('ball_recovery', 'shot')
-      or (type = 'carry' and y >= 62 and end_y between 30 and 62 and end_x >= 80))`;
+      or (type = 'carry' and y >= 62 and end_y between 30 and 62 and end_x >= 80))`);
   const best = standouts(p.attr_percentiles);
   const small = smallGroupNote(p.peers, p.role);
   const keys = Object.keys(p.per90);
@@ -271,10 +272,10 @@ function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribut
 }
 
 async function RiskAndMarket({ id, p }: { id: string; p: Player }) {
-  const [[market], tests] = await Promise.all([
-    sql<Market[]>`select contract_end, availability, transfer_conditions, representative, is_demo from player_market where player_id = ${id}`,
-    getTests(id),
-  ]);
+  const [[market], tests] = await db((tx) => Promise.all([
+    tx<Market[]>`select contract_end, availability, transfer_conditions, representative, is_demo from player_market where player_id = ${id}`,
+    getTests(tx, id),
+  ]));
   const demo = (field: string) => p.demo_fields.includes(field);
   const facts: { label: string; value: string | null; demo: boolean }[] = [
     { label: "Age", value: p.birth_year == null ? "Age not recorded" : `${SEASON_YEAR - p.birth_year} (born ${p.birth_year})`, demo: p.birth_year != null && demo("birth_year") },
@@ -348,16 +349,16 @@ function TestsTable({ tests }: { tests: TestResult[] }) {
 
 async function SimilarPlayers({ id, p, plural }: { id: string; p: Player; plural: string }) {
   const similar = p.has_style
-    ? await sql<Similar[]>`
+    ? await db((tx) => tx<Similar[]>`
         select p.id, p.display_name, p.photo_url, lt.team, 1 - (m.style <=> me.style) as similarity
         from player_season_metrics me
         join player_season_metrics m on m.role = me.role and m.competition_id = me.competition_id
           and m.player_id <> me.player_id and m.style is not null
         join players p on p.id = m.player_id and p.visible_to_scouts
-        ${latestTeam()}
+        ${latestTeam(tx)}
         where me.player_id = ${id} and me.role = ${p.role}
         order by m.style <=> me.style
-        limit 8`
+        limit 8`)
     : [];
   return (
     <VStack gap={3}>

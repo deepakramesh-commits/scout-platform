@@ -6,7 +6,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import type { SelectorSection } from "@astryxdesign/core/Selector";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { sql } from "@/lib/db";
+import { db, requireScouting, type Q } from "@/lib/auth";
 import { fmtMetric, grouped, label, LOWER_IS_BETTER, ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import { flag, PctBar, PlayerAvatar } from "../ui";
@@ -23,12 +23,12 @@ const SERIES = { a: "var(--color-data-categorical-teal)", b: "var(--color-data-c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const pick = (v: string | string[] | undefined) => { const s = Array.isArray(v) ? v[0] : v; return s && UUID.test(s) ? s : null; };
 
-async function load(id: string | null) {
+async function load(tx: Q, id: string | null) {
   if (!id) return null;
-  const [s] = await sql<Side[]>`
+  const [s] = await tx<Side[]>`
     select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
     from players p join player_season_metrics m on m.player_id = p.id
-    ${latestTeam()}
+    ${latestTeam(tx)}
     where p.id = ${id} and p.visible_to_scouts
     order by m.minutes desc limit 1`;
   return s ?? null;
@@ -48,14 +48,21 @@ function sectionsOf(options: Option[], current: (Side | null)[]): SelectorSectio
   return extra.length ? [{ type: "section", title: "Below the minutes cut-off", options: extra }, ...byRole.values()] : [...byRole.values()];
 }
 
-export default async function Compare({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+export default async function Compare(props: Props) {
+  await requireScouting();
+  return db((tx) => ComparePage(tx, props));
+}
+
+async function ComparePage(tx: Q, { searchParams }: Props) {
   const q = await searchParams;
   const [options, a, b] = await Promise.all([
-    sql<Option[]>`
+    tx<Option[]>`
       select p.id, p.display_name, m.role from player_season_metrics m join players p on p.id = m.player_id
       where m.style is not null and p.visible_to_scouts order by m.role, p.display_name`,
-    load(pick(q.a)),
-    load(pick(q.b)),
+    load(tx, pick(q.a)),
+    load(tx, pick(q.b)),
   ]);
 
   const side = (s: Side, key: "a" | "b") => (

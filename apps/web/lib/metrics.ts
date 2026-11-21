@@ -3,8 +3,8 @@ export const label = (key: string) =>
   key === "xg" ? "xG" : key === "xt" ? "xT" : key === "cut_ins" ? "Cut-ins"
     : (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_pct$/, "").replaceAll("_", " ");
 
-export const metricKeys = async (sql: import("postgres").Sql) =>
-  (await sql<{ key: string }[]>`select distinct jsonb_object_keys(per90) as key from player_season_metrics order by 1`).map((r) => r.key);
+export const metricKeys = async (q: import("./auth").Q) =>
+  (await q<{ key: string }[]>`select distinct jsonb_object_keys(per90) as key from player_season_metrics order by 1`).map((r) => r.key);
 
 // Presentation grouping only; keys missing here land in "Other" so a new Python metric still shows up.
 export const GROUPS: [string, string[]][] = [
