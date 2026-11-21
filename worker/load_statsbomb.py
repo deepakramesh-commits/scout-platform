@@ -30,11 +30,14 @@ EVENT_TYPES = {
     "Pass": "pass", "Carry": "carry", "Shot": "shot", "Dribble": "dribble", "Duel": "duel",
     "Ball Recovery": "ball_recovery", "Interception": "interception", "Clearance": "clearance",
     "Foul Committed": "foul_committed", "Foul Won": "foul_won", "Ball Receipt*": "ball_receipt",
+    "Pressure": "pressure", "Miscontrol": "miscontrol", "Dispossessed": "dispossessed", "Dribbled Past": "dribbled_past",
+    "Block": "block", "Goal Keeper": "goalkeeper",
 }
 OUTCOME_COL = {
     "Pass": "pass_outcome", "Shot": "shot_outcome", "Dribble": "dribble_outcome", "Duel": "duel_outcome",
-    "Interception": "interception_outcome", "Ball Receipt*": "ball_receipt_outcome",
+    "Interception": "interception_outcome", "Ball Receipt*": "ball_receipt_outcome", "Goal Keeper": "goalkeeper_outcome",
 }
+AERIAL_WON = ("pass_aerial_won", "clearance_aerial_won", "shot_aerial_won", "miscontrol_aerial_won")
 BODY_COL = {"pass": "pass_body_part", "shot": "shot_body_part", "clearance": "clearance_body_part"}
 END_COL = {"pass": "pass_end_location", "carry": "carry_end_location", "shot": "shot_end_location"}
 
@@ -66,6 +69,7 @@ def union_seconds(spans):
 
 
 def event_rows(match_id, team_ids, events):
+    through_balls = {r["id"] for r in events if r["type"] == "Pass" and val(r, "pass_through_ball")}
     for r in events:
         t = EVENT_TYPES.get(r["type"])
         if t is None or r["period"] > 4 or val(r, "player_id") is None:
@@ -83,6 +87,16 @@ def event_rows(match_id, team_ids, events):
                     extra[flag] = True
         if t == "foul_committed" and val(r, "foul_committed_card"):
             extra["card"] = slug(r["foul_committed_card"])
+        if t == "shot" and val(r, "shot_first_time"):
+            extra["first_time"] = True
+        if t == "ball_receipt" and any(e in through_balls for e in val(r, "related_events") or []):
+            extra["through_ball"] = True
+        if t == "goalkeeper":
+            extra["gk_type"] = slug(r["goalkeeper_type"])
+        if val(r, "under_pressure"):
+            extra["under_pressure"] = True
+        if any(val(r, k) for k in AERIAL_WON):
+            extra["aerial_won"] = True
         outcome = val(r, OUTCOME_COL.get(r["type"], ""))
         if outcome is not None:
             outcome = slug(outcome)
@@ -107,12 +121,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--competition-id", type=int, default=1267)
     ap.add_argument("--season-id", type=int, default=107)
+    ap.add_argument("--min-minutes", type=int, default=450, help="minutes before percentiles show; a tournament needs fewer")
     a = ap.parse_args()
 
     comps = sb.competitions()
     c = comps[(comps.competition_id == a.competition_id) & (comps.season_id == a.season_id)].iloc[0]
     comp_id = uid("competition", f"{a.competition_id}:{a.season_id}")
-    competition = [(comp_id, c.competition_name, c.country_name, None, str(c.season_name))]
+    competition = [(comp_id, c.competition_name, c.country_name, None, str(c.season_name), a.min_minutes)]
 
     teams, matches, lineups, events = {}, [], [], []
     players = {}
@@ -157,19 +172,22 @@ def main():
 
     with psycopg.connect(os.environ.get("DATABASE_URL", DEFAULT_DB)) as conn, conn.cursor() as cur:
         cur.executemany(
-            "insert into competitions (id, name, country, age_group, season) values (%s,%s,%s,%s,%s) "
-            "on conflict (id) do update set name=excluded.name, country=excluded.country, age_group=excluded.age_group, season=excluded.season",
+            "insert into competitions (id, name, country, age_group, season, min_minutes) values (%s,%s,%s,%s,%s,%s) "
+            "on conflict (id) do update set name=excluded.name, country=excluded.country, age_group=excluded.age_group, "
+            "season=excluded.season, min_minutes=excluded.min_minutes",
             competition)
         cur.executemany(
             "insert into teams (id, name, country) values (%s,%s,%s) "
             "on conflict (id) do update set name=excluded.name, country=excluded.country", list(teams.values()))
         cur.executemany(
-            "insert into players (id, display_name, nationality, primary_position, visible_to_scouts) values (%s,%s,%s,%s,true) "
+            # visibility belongs to the consent and approval workflow, so a re-run never resurfaces a hidden profile
+            "insert into players (id, display_name, nationality, primary_position) values (%s,%s,%s,%s) "
             "on conflict (id) do update set display_name=excluded.display_name, nationality=excluded.nationality, "
-            "primary_position=excluded.primary_position, visible_to_scouts=true",
+            "primary_position=excluded.primary_position",
             player_rows)
         cur.executemany(
-            "insert into matches (id, competition_id, home_team_id, away_team_id, kickoff_at) values (%s,%s,%s,%s,%s) "
+            # open data is already checked by its publisher, so it enters as published
+            "insert into matches (id, competition_id, home_team_id, away_team_id, kickoff_at, status) values (%s,%s,%s,%s,%s,'published') "
             "on conflict (id) do update set competition_id=excluded.competition_id, home_team_id=excluded.home_team_id, "
             "away_team_id=excluded.away_team_id, kickoff_at=excluded.kickoff_at", matches)
         cur.executemany(
