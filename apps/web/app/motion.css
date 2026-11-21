@@ -1,0 +1,80 @@
+/* Custom visuals (percentile bars, pitch map) and motion. Everything else is Astryx components and the scout theme. */
+
+/* ---------- Percentile bars ---------- */
+.pbar { display: block; height: var(--spacing-1-5); border-radius: var(--radius-full); background: var(--color-background-muted); overflow: hidden; }
+.pbar > span { display: block; height: 100%; transform-origin: left; }
+.pbar.flip { transform: scaleX(-1); }
+.pbar .elite { background: var(--color-icon-green); }
+.pbar .good { background: var(--color-icon-teal); }
+.pbar .avg { background: var(--color-icon-yellow); }
+.pbar .low { background: var(--color-icon-red); }
+
+/* Metric rows: label, bar, per-90 value, percentile. Compare rows mirror two bars around the label. */
+.mrow { grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr) 3rem 2.25rem; align-items: center; }
+.cmp { grid-template-columns: 3.25rem minmax(0, 1fr) minmax(0, 9rem) minmax(0, 1fr) 3.25rem; align-items: center; }
+@media (max-width: 40rem) {
+  .mrow { grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) 2.75rem 2rem; }
+  .cmp { grid-template-columns: 3rem minmax(0, 1fr) minmax(0, 5.5rem) minmax(0, 1fr) 3rem; }
+}
+.cmp .win { color: var(--color-text-accent); }
+
+/* ---------- Pitch map ---------- */
+.pitch { margin: 0; --c-cut: var(--color-data-yellow-3); --c-rec: var(--color-data-blue-2); --c-shot: var(--color-data-red-3); }
+.pitch > svg { width: 100%; display: block; border-radius: var(--radius-element); }
+.pitch-dir { font-size: 2.6px; fill: var(--color-text-secondary); }
+.dot { width: var(--spacing-2); height: var(--spacing-2); flex: none; }
+
+/* ---------- Motion ---------- */
+
+/* Percentile bars fill; the inline transform is the end state, so the keyframe only needs a start. */
+.pbar > span { animation: bar-in 500ms var(--ease-out) calc(100ms + var(--i, 0) * 40ms) backwards; }
+@keyframes bar-in { from { transform: scaleX(0); } }
+
+/* Count-up without JS: a registered integer property drives a CSS counter. */
+@property --n { syntax: "<integer>"; inherits: false; initial-value: 0; }
+.count { --n: var(--v); counter-reset: n var(--n); font-variant-numeric: tabular-nums; animation: count-up 500ms var(--ease-out) calc(100ms + var(--i, 0) * 40ms) backwards; }
+.count::after { content: counter(n) attr(data-suffix); }
+@keyframes count-up { from { --n: 0; } }
+
+/* Search results: only the first rows cascade so repeat searches stay fast. */
+tr.in { animation: row-in 220ms var(--ease-out) calc(var(--i) * 20ms) backwards; }
+@keyframes row-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* Featured prospect: one gentle rise when the dashboard first paints. */
+.rise { animation: rise 300ms var(--ease-out) 80ms backwards; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+
+/* Compare: winner colour lands once its bar has grown. */
+.cmp .win { animation: win-in 200ms ease calc(600ms + var(--i, 0) * 30ms) backwards; }
+@keyframes win-in { from { color: var(--color-text-primary); } }
+
+/* Compare radar: each player's shape grows out of the chart centre, A then B. */
+.radar-a, .radar-b { transform-box: view-box; transform-origin: center; animation: radar-in 500ms var(--ease-out) 150ms backwards; }
+.radar-b { animation-delay: 270ms; }
+@keyframes radar-in { from { opacity: 0; transform: scale(0.4); } }
+
+/* Pitch map plays when scrolled into view (PitchPlayer sets data-state). Without JS everything is simply visible. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) { .pitch[data-state="idle"] .mk { opacity: 0; } }
+.pitch[data-state="play"] .mk-cut { stroke-dasharray: 1; animation: draw 450ms var(--ease-in-out) var(--d) backwards; }
+.pitch[data-state="play"] .mk-head { animation: fade 150ms ease var(--d) backwards; }
+.pitch[data-state="play"] .mk-shot { transform-box: fill-box; transform-origin: center; animation: pop 300ms cubic-bezier(0.34, 1.56, 0.64, 1) var(--d) backwards; }
+.pitch[data-state="play"] .mk-rec { animation: fade 250ms ease var(--d) backwards; }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.6); } }
+
+/* Cards that navigate lift slightly under a fine pointer. */
+.lift { transition: transform 200ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .lift:hover { transform: translateY(-2px); } }
+
+/* Photo flies from the search row into the profile header (React ViewTransition).
+   The pseudo-elements live on :root, outside the theme scope, so --ease-in-out is spelled out. */
+::view-transition-group(*) { animation-duration: 350ms; animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 200ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pbar > span, .count, tr.in, .rise, .cmp .win, .radar-a, .radar-b, .pitch .mk { animation: none !important; }
+  .replay { display: none !important; }
+  .lift:hover { transform: none; }
+  ::view-transition-group(*) { animation: none; } /* no movement; the crossfade stays */
+}

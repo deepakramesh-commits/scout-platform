@@ -1,0 +1,14 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "54330:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./supabase/local/00_auth_stub.sql:/docker-entrypoint-initdb.d/00_auth_stub.sql:ro
+      - ./supabase/migrations/20261111000000_init.sql:/docker-entrypoint-initdb.d/10_init.sql:ro
+      - ./supabase/migrations/20261111000001_player_photos.sql:/docker-entrypoint-initdb.d/11_player_photos.sql:ro
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:

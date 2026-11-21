@@ -1,0 +1,14 @@
+[project]
+name = "scout-worker"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["statsbombpy", "pandas", "numpy", "psycopg[binary]"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv]
+package = false
