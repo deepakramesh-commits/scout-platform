@@ -25,6 +25,20 @@
 .pitch-dir { font-size: 2.6px; fill: var(--color-text-secondary); }
 .dot { width: var(--spacing-2); height: var(--spacing-2); flex: none; }
 
+/* ---------- Scout's eye: 1-10 and 0-100 tracks ---------- */
+.drow { grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) 3.5rem; align-items: center; }
+/* On a phone the label sits above its track so the track keeps its width. */
+@media (max-width: 40rem) { .drow { grid-template-columns: minmax(0, 1fr) 3.5rem; row-gap: 0; } .drow > :first-child { grid-column: 1 / -1; } }
+.track { width: 100%; height: var(--spacing-6); display: block; overflow: visible; }
+.track-line { stroke: var(--color-border-emphasized); stroke-width: 2; }
+.track-tick { stroke: var(--color-border-emphasized); stroke-width: 1; }
+.track-gap { stroke: var(--color-data-gray-3); stroke-width: 3; }
+.legend-mk { width: var(--spacing-4); height: var(--spacing-4); flex: none; }
+.mk-report { fill: var(--color-data-gray-3); }
+.mk-avg { fill: var(--color-data-blue-3); stroke: var(--color-background-surface); stroke-width: 2; }
+.mk-match { fill: var(--color-data-blue-3); stroke: var(--color-background-surface); stroke-width: 2; }
+.mk-scout { fill: var(--color-data-orange-4); stroke: var(--color-background-surface); stroke-width: 2; }
+
 /* ---------- Motion ---------- */
 
 /* Percentile bars fill; the inline transform is the end state, so the keyframe only needs a start. */

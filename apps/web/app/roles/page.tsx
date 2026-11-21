@@ -134,8 +134,8 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
             </Card>
           )}
           <Text type="supporting">
-            Fit averages the evidence for each attribute (match percentile within the position, physical test percentile among tested players),
-            weighted very high 3, high 2, medium 1. Scout ratings are not counted yet. A Demo mark means some of the evidence comes from demo physical tests.
+            Fit averages the evidence for each attribute (match percentile within the position, physical test percentile among tested players,
+            your organisation’s average scout rating × 10), weighted very high 3, high 2, medium 1. A Demo mark means some of the evidence comes from demo tests or demo reports.
           </Text>
         </>
       )}

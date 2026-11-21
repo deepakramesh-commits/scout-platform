@@ -386,3 +386,19 @@ language sql stable security definer set search_path = public as $$
   where origin = 'match_data' and claimed_by is null and length(q) >= 3 and display_name ilike '%' || q || '%'
   order by display_name limit 20 $$;
 grant execute on function app.claimable_players(text) to authenticated;
+
+-- Column-level grants: people edit descriptive fields only. Status, approval, verification and ownership change
+-- through the app.* functions and triggers above, so an owner cannot approve his own under-18 profile.
+revoke update on players from authenticated;
+grant update (height_cm, preferred_foot, nationality, primary_position, demo_fields, photo_url, photo_credit, photo_source_url)
+  on players to authenticated;
+drop policy owner_edit on players;
+create policy owner_edit on players for update to authenticated
+  using (app.owns_player(id) or app.is_admin() or id in (select player_id from agent_clients where org_id = (select app.org())))
+  with check (app.owns_player(id) or app.is_admin() or id in (select player_id from agent_clients where org_id = (select app.org())));
+-- Consent is withdrawn, never rewritten.
+revoke update on consents from authenticated;
+grant update (revoked_at) on consents to authenticated;
+-- The agency moves a request along; it cannot change who asked or what was asked.
+revoke update on intro_requests from authenticated;
+grant update (status) on intro_requests to authenticated;

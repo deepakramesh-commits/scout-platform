@@ -10,20 +10,21 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { Link } from "@astryxdesign/core/Link";
 import { StackItem } from "@astryxdesign/core/Stack";
-import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from "@astryxdesign/core/Table";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting } from "@/lib/auth";
-import { attributeValue, standouts } from "@/lib/fit";
+import { standouts } from "@/lib/fit";
 import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, ROLE_NAMES, rolePlural, smallGroupNote } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import {
-  getAttributes, getEvidence, getProfiles, getTests, GROUP_ORDER, SEASON_YEAR, SOURCE_LABEL,
-  type Attribute, type PlayerEvidence, type TestResult,
+  getAttributes, getEvidence, getProfiles, SEASON_YEAR, SOURCE_LABEL,
+  type Attribute,
 } from "@/lib/scouting";
-import { Count, Demo, flag, PctBadge, PctBar, Pitch, PlayerAvatar } from "../../ui";
+import { Count, Demo, flag, PctBar, Pitch, PlayerAvatar } from "../../ui";
 import { FitCard } from "./fit-card";
+import { RiskAndMarket, type MarketPlayer } from "./risk-market";
+import { ScoutView } from "./scout-view";
 import { SectionTabs } from "./tabs";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +34,7 @@ type Player = {
   team: string | null; role: string; minutes: number; matches: number; peers: number; has_style: boolean;
   per90: Record<string, number | null>; percentiles: Record<string, number>; attr_percentiles: Record<string, number>;
   birth_year: number | null; height_cm: number | null; preferred_foot: string | null; nationality: string | null; demo_fields: string[];
-};
-type Market = {
-  contract_end: Date | null; availability: string | null; transfer_conditions: string | null; representative: string | null; is_demo: boolean;
-};
+} & MarketPlayer;
 type Similar = { id: string; display_name: string; photo_url: string | null; team: string | null; similarity: number };
 type Ev = { type: string; x: number; y: number; end_x: number | null; end_y: number | null; xg: number | null };
 
@@ -50,16 +48,13 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number]["value"];
 const isSection = (v: unknown): v is Section => SECTIONS.some((s) => s.value === v);
 
-const AVAILABILITY: Record<string, string> = { available: "Available", open_to_offers: "Open to offers", not_available: "Not available" };
-const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-const roundOrNull = (v: number | null) => (v == null ? null : Math.round(v));
 const styleMatch = (cosine: number) => Math.round(((1 + cosine) / 2) * 100);
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
 export default async function PlayerPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireScouting();
+  const user = await requireScouting();
   const [{ id }, q] = await Promise.all([params, searchParams]);
   if (!UUID.test(id)) notFound();
   const tab = first(q.tab);
@@ -68,7 +63,8 @@ export default async function PlayerPage({ params, searchParams }: {
   const [p] = await db((tx) => tx<Player[]>`
     select p.display_name, p.photo_url, p.photo_credit, p.photo_source_url, lt.team, m.role, m.minutes, m.per90, m.percentiles,
            m.attr_percentiles, m.peers, m.style is not null as has_style,
-           p.birth_year, p.height_cm, p.preferred_foot, p.nationality, p.demo_fields,
+           p.birth_year, p.height_cm, p.preferred_foot, p.nationality, p.demo_fields, p.id_verified,
+           m.competition_id, m.age_band, m.band_percentiles, m.band_peers,
            (select count(*)::int from lineups l where l.player_id = p.id and l.minutes_played > 0) as matches
     from players p
     join player_season_metrics m on m.player_id = p.id
@@ -129,7 +125,7 @@ export default async function PlayerPage({ params, searchParams }: {
 
       {section === "overview" && <Overview id={id} p={p} attrs={attrs} plural={plural}
         fit={profile && <FitCard playerId={id} profiles={profiles} profile={profile} attributes={attrs} evidence={evidence} peers={p.peers} role={p.role} />} />}
-      {section === "scout" && <ScoutView attributes={attributes} evidence={evidence} peers={p.peers} role={p.role} />}
+      {section === "scout" && <ScoutView id={id} user={user} attributes={attributes} evidence={evidence} peers={p.peers} role={p.role} />}
       {section === "market" && <RiskAndMarket id={id} p={p} />}
       {section === "similar" && <SimilarPlayers id={id} p={p} plural={plural} />}
     </VStack>
@@ -219,131 +215,6 @@ async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; 
         </Card>
       </Grid>
     </VStack>
-  );
-}
-
-function ScoutView({ attributes, evidence, peers, role }: { attributes: Attribute[]; evidence: PlayerEvidence; peers: number; role: string }) {
-  const small = smallGroupNote(peers, role);
-  return (
-    <VStack gap={4}>
-      <VStack gap={1}>
-        <Heading level={2}>Scout view</Heading>
-        <Text color="secondary">
-          Every attribute a scout judges, in the scout’s words, with the evidence it has today. Scout ratings are not shown here yet.
-          {small && ` Match percentiles are ${small}.`}
-        </Text>
-      </VStack>
-      <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4} align="start">
-        {GROUP_ORDER.map((g) => (
-          <Card key={g}>
-            <VStack gap={3}>
-              <Heading level={3}>{g.charAt(0).toUpperCase() + g.slice(1)}</Heading>
-              {attributes.filter((a) => a.grp === g).map((a, i, all) => {
-                const ev = evidence.evidence[a.key] ?? {};
-                return (
-                  <VStack key={a.key} gap={2}>
-                    <VStack gap={0}>
-                      <HStack gap={2} hAlign="between" vAlign="center">
-                        <Text weight="semibold">{a.label}</Text>
-                        <PctBadge pct={roundOrNull(attributeValue(ev))} />
-                      </HStack>
-                      <Text type="supporting">{SOURCE_LABEL[a.source]} · {a.description}</Text>
-                      <HStack gap={1} vAlign="center" wrap="wrap">
-                        <Text type="supporting">
-                          {[
-                            ev.match != null && `Match percentile ${ev.match}`,
-                            ev.test != null && `Test percentile ${ev.test}`,
-                            a.source === "scout" && "Scout ratings not counted yet",
-                          ].filter(Boolean).join(" · ") || "No evidence yet"}
-                        </Text>
-                        {evidence.demo.has(a.key) && <Demo />}
-                      </HStack>
-                    </VStack>
-                    {i < all.length - 1 && <Divider />}
-                  </VStack>
-                );
-              })}
-            </VStack>
-          </Card>
-        ))}
-      </Grid>
-    </VStack>
-  );
-}
-
-async function RiskAndMarket({ id, p }: { id: string; p: Player }) {
-  const [[market], tests] = await db((tx) => Promise.all([
-    tx<Market[]>`select contract_end, availability, transfer_conditions, representative, is_demo from player_market where player_id = ${id}`,
-    getTests(tx, id),
-  ]));
-  const demo = (field: string) => p.demo_fields.includes(field);
-  const facts: { label: string; value: string | null; demo: boolean }[] = [
-    { label: "Age", value: p.birth_year == null ? "Age not recorded" : `${SEASON_YEAR - p.birth_year} (born ${p.birth_year})`, demo: p.birth_year != null && demo("birth_year") },
-    { label: "Height", value: p.height_cm == null ? null : `${p.height_cm} cm`, demo: demo("height_cm") },
-    { label: "Preferred foot", value: p.preferred_foot && p.preferred_foot.charAt(0).toUpperCase() + p.preferred_foot.slice(1), demo: demo("preferred_foot") },
-    { label: "Nationality", value: p.nationality, demo: false },
-    { label: "Contract ends", value: market?.contract_end ? date(market.contract_end) : null, demo: !!market?.is_demo },
-    { label: "Availability", value: market?.availability ? AVAILABILITY[market.availability] ?? market.availability : null, demo: !!market?.is_demo },
-    { label: "Transfer conditions", value: market?.transfer_conditions || null, demo: !!market?.is_demo },
-    { label: "Representative", value: market?.representative || null, demo: !!market?.is_demo },
-  ];
-  return (
-    <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4} align="start">
-      <Card>
-        <VStack gap={3}>
-          <Heading level={2}>Market</Heading>
-          {facts.map((f) => (
-            <HStack key={f.label} gap={3} hAlign="between" vAlign="center" wrap="wrap">
-              <Text color="secondary">{f.label}</Text>
-              <HStack gap={1} vAlign="center">
-                <Text weight="semibold">{f.value ?? "Not recorded"}</Text>
-                {f.value != null && f.demo && <Demo />}
-              </HStack>
-            </HStack>
-          ))}
-        </VStack>
-      </Card>
-      <Card>
-        <VStack gap={3}>
-          <Heading level={2}>Physical tests</Heading>
-          {tests.length ? <TestsTable tests={tests} /> : <EmptyState isCompact title="No physical tests yet" description="Sprint, endurance and jump results appear here once a coach records them." />}
-          <Text type="supporting">Percentile is among every player’s latest test of that kind; for sprints, faster ranks higher.</Text>
-        </VStack>
-      </Card>
-    </Grid>
-  );
-}
-
-function TestsTable({ tests }: { tests: TestResult[] }) {
-  return (
-    <Table density="compact" style={{ minWidth: "26rem" }}>
-      <TableHeader>
-        <TableRow>
-          <TableHeaderCell style={{ width: "40%" }}>Test</TableHeaderCell>
-          <TableHeaderCell><Text type="inherit" display="block" justify="end">Result</Text></TableHeaderCell>
-          <TableHeaderCell>Tested</TableHeaderCell>
-          <TableHeaderCell><Text type="inherit" display="block" justify="end">Percentile</Text></TableHeaderCell>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tests.map((t) => (
-          <TableRow key={t.test}>
-            <TableCell>
-              <VStack gap={0}>
-                <Text>{t.label}</Text>
-                <HStack gap={1} vAlign="center">
-                  <Text type="supporting" size="xsm">{t.verified ? "Verified" : "Not verified"}</Text>
-                  {t.is_demo && <Demo />}
-                </HStack>
-              </VStack>
-            </TableCell>
-            <TableCell><Text display="block" justify="end" hasTabularNumbers>{t.value} {t.unit}</Text></TableCell>
-            <TableCell><Text type="supporting">{date(t.tested_at)}</Text></TableCell>
-            <TableCell><HStack hAlign="end"><PctBadge pct={t.pct} /></HStack></TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
   );
 }
 

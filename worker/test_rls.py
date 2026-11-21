@@ -141,3 +141,27 @@ def test_profile_views_are_counted_by_club_without_exposing_who(cur):
     assert one(cur, "select app.view_count(%s)", kofi) is None
     act_as(cur, "player")
     assert one(cur, "select app.view_count(%s)", kofi) == 1
+
+
+def test_an_owner_cannot_approve_his_own_profile_or_rewrite_consent(cur):
+    yaw = did("signup", "yaw")
+    act_as(cur, "guardian")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("update players set status = 'live', approved_at = now() where id = %s", (yaw,))
+    cur.connection.rollback()
+    act_as(cur, "guardian")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("update consents set scope = '{everything}' where player_id = %s", (yaw,))
+    cur.connection.rollback()
+    act_as(cur, "guardian")
+    cur.execute("update players set height_cm = 170 where id = %s", (yaw,))
+    assert cur.rowcount == 1
+
+
+def test_an_agent_edits_his_clients_details_but_not_their_status(cur):
+    act_as(cur, "agent")
+    client = one(cur, "select player_id from agent_clients limit 1")
+    cur.execute("update players set height_cm = 181 where id = %s", (client,))
+    assert cur.rowcount == 1
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("update players set id_verified = true where id = %s", (client,))

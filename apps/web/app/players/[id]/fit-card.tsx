@@ -68,8 +68,8 @@ export function FitCard({ playerId, profiles, profile, attributes, evidence, pee
           })}
         </VStack>
         <Text type="supporting">
-          Each bar is 0 to 100: the match percentile within the position and the physical test percentile among tested players, averaged where both exist.
-          Scout ratings are not counted yet.{small && ` Match percentiles here are ${small}.`}
+          Each bar is 0 to 100: the match percentile within the position, the physical test percentile among tested players and your organisation’s
+          average scout rating × 10, averaged where more than one exists.{small && ` Match percentiles here are ${small}.`}
         </Text>
       </VStack>
     </Card>
