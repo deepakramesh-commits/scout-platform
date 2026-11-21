@@ -11,22 +11,23 @@ import { draftLabel, SOURCE_LABEL, type Attribute, type PlayerEvidence, type Pro
 import { ProfilePicker } from "../../profile-picker";
 import { Count, Demo, PctBar, PRIORITY_COLOR } from "../../ui";
 
-export function FitCard({ playerId, profiles, profile, attributes, evidence, peers, role }: {
-  playerId: string; profiles: Profile[]; profile: Profile; attributes: Map<string, Attribute>;
-  evidence: PlayerEvidence; peers: number; role: string;
+/** `pick` shows the profile picker posting to that page; a printed or shared report leaves it out. */
+export function FitCard({ pick, profile, attributes, evidence, peers, role }: {
+  pick?: { action: string; name: string; profiles: Profile[] }; profile: Profile; attributes: Map<string, Attribute>;
+  evidence: PlayerEvidence; peers: number; role: string | null;
 }) {
   const fit = fitScore(profile.items, evidence.evidence);
   const draft = draftLabel(profile);
-  const small = smallGroupNote(peers, role);
+  const small = role && smallGroupNote(peers, role);
   return (
     <Card>
       <VStack gap={4}>
         <VStack gap={1}>
           <Heading level={2}>Fit</Heading>
-          <Text type="supporting">How well his evidence matches what a club needs. Pick the requirement profile to judge him against.</Text>
+          <Text type="supporting">How well his evidence matches what a club needs.{pick && " Pick the requirement profile to judge him against."}</Text>
         </VStack>
-        <ProfilePicker key={profile.id} action={`/players/${playerId}`} name="fit" value={profile.id} label="Against profile"
-          options={profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />
+        {pick && <ProfilePicker key={profile.id} action={pick.action} name={pick.name} value={profile.id} label="Against profile"
+          options={pick.profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />}
         <HStack gap={4} wrap="wrap" vAlign="center">
           {fit.score != null
             ? <Heading level={1}><Count value={fit.score} /></Heading>

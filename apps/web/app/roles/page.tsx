@@ -14,13 +14,14 @@ import { ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import { ageRange, draftLabel, getAttributes, getEvidence, getProfiles, SEASON_YEAR, type Profile } from "@/lib/scouting";
 import { ProfilePicker } from "../profile-picker";
+import { VerifiedMark } from "../verified";
 import { Demo, flag, PlayerAvatar, PRIORITY_COLOR, Standouts } from "../ui";
 
 export const dynamic = "force-dynamic";
 
 type Candidate = {
   id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number;
-  peers: number; attr_percentiles: Record<string, number>; birth_year: number | null; age_is_demo: boolean;
+  peers: number; attr_percentiles: Record<string, number>; birth_year: number | null; age_is_demo: boolean; id_verified: boolean;
 };
 type Ranked = Candidate & { fit: Fit; demo: boolean };
 
@@ -28,7 +29,7 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 
 const candidates = (tx: Q, p: Profile) => tx<Candidate[]>`
   select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.peers, m.attr_percentiles, p.birth_year,
-         'birth_year' = any(p.demo_fields) as age_is_demo
+         'birth_year' = any(p.demo_fields) as age_is_demo, p.id_verified
   from players p
   join lateral (select * from player_season_metrics m where m.player_id = p.id order by m.minutes desc limit 1) m on true
   ${latestTeam(tx)}
@@ -170,7 +171,7 @@ function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<stri
                 <HStack gap={2} vAlign="center">
                   <PlayerAvatar name={r.display_name} photo={r.photo_url} />
                   <VStack gap={0}>
-                    <Text weight="semibold">{r.display_name}</Text>
+                    <HStack gap={1} vAlign="center" wrap="wrap"><Text weight="semibold">{r.display_name}</Text><VerifiedMark verified={r.id_verified} /></HStack>
                     <HStack gap={1} vAlign="center" wrap="wrap">
                       <Text type="supporting">{flag(r.team)} {r.team} · {r.role} · {r.birth_year == null ? "age not recorded" : `${SEASON_YEAR - r.birth_year} yrs`}</Text>
                       {r.birth_year != null && r.age_is_demo && <Demo />}

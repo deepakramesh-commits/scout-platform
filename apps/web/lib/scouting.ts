@@ -44,6 +44,10 @@ export const getProfiles = (q: Q) =>
     group by r.id
     order by r.created_at, r.id`;
 
+/** The profile asked for, else the first one for his position, else the first. */
+export const pickProfile = (profiles: Profile[], id: string | undefined | null, role: string | null) =>
+  profiles.find((r) => r.id === id) ?? profiles.find((r) => role != null && r.positions.includes(role)) ?? profiles[0];
+
 // Ranked among every player's latest test of the kind, whoever is looking (app.test_percentiles is security definer).
 const rankedTests = (q: Q, ids: string[]) => q`ranked as (select * from app.test_percentiles(${ids}::uuid[]))`;
 

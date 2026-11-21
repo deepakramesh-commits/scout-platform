@@ -19,19 +19,25 @@ const REC_COLOR = { sign: "green", follow: "teal", pass: "red" } as const;
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
+/** Each mental attribute with every scout's rating and their average; demo when any of those ratings is. */
+export function mentality(attributes: Attribute[], reports: ScoutReport[]): { rows: MentalRow[]; demo: boolean } {
+  const who = (r: ScoutReport) => `${r.author ?? "A colleague"}, ${date(r.created_at)}`;
+  const mental = attributes.filter((a) => a.grp === "mental");
+  const rows = mental.map((a) => {
+    const ratings = reports.filter((r) => r.ratings[a.key] != null).map((r) => ({ value: r.ratings[a.key], who: who(r) }));
+    return { key: a.key, label: a.label, ratings, avg: mean(ratings.map((x) => x.value)) };
+  });
+  return { rows, demo: reports.some((r) => r.is_demo && mental.some((a) => r.ratings[a.key] != null)) };
+}
+
 export async function ScoutView({ id, user, attributes, evidence, peers, role }: {
-  id: string; user: Me; attributes: Attribute[]; evidence: PlayerEvidence; peers: number; role: string;
+  id: string; user: Me; attributes: Attribute[]; evidence: PlayerEvidence; peers: number; role: string | null;
 }) {
   const reports = await db((tx) => getReports(tx, id));
   const canWrite = REPORT_ROLES.includes(user.role) && !!user.org_id;
-  const small = smallGroupNote(peers, role);
-  const who = (r: ScoutReport) => `${r.author ?? "A colleague"}, ${date(r.created_at)}`;
-  const ratingsOf = (key: string) => reports.filter((r) => r.ratings[key] != null).map((r) => ({ value: r.ratings[key], who: who(r) }));
-  const mental: MentalRow[] = attributes.filter((a) => a.grp === "mental").map((a) => {
-    const ratings = ratingsOf(a.key);
-    return { key: a.key, label: a.label, ratings, avg: mean(ratings.map((x) => x.value)) };
-  });
-  const mentalDemo = reports.some((r) => r.is_demo && attributes.some((a) => a.grp === "mental" && r.ratings[a.key] != null));
+  const small = role && smallGroupNote(peers, role);
+  const ratedCount = (key: string) => reports.filter((r) => r.ratings[key] != null).length;
+  const { rows: mental, demo: mentalDemo } = mentality(attributes, reports);
   const eye: EyeRow[] = attributes.flatMap((a) => {
     const ev = evidence.evidence[a.key];
     return ev?.match != null && ev.scout != null
@@ -108,7 +114,7 @@ export async function ScoutView({ id, user, attributes, evidence, peers, role }:
               <Heading level={3}>{g.charAt(0).toUpperCase() + g.slice(1)}</Heading>
               {attributes.filter((a) => a.grp === g).map((a, i, all) => {
                 const ev = evidence.evidence[a.key] ?? {};
-                const n = ratingsOf(a.key).length;
+                const n = ratedCount(a.key);
                 const v = attributeValue(ev);
                 return (
                   <VStack key={a.key} gap={2}>

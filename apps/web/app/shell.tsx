@@ -32,6 +32,8 @@ export function Shell({ children, subheading, user }: { children: React.ReactNod
   const current = selected(items, path);
   // A phone has no room for the name and organisation beside the menu; the account page shows both.
   const wide = useMediaQuery("(min-width: 48rem)");
+  // A signed-out reader of a shared report link sees only the brand: nothing else in the app is his.
+  const sharedReport = path.startsWith("/r/");
   return (
     <Theme theme={themes[defaultThemeSlug]} mode="dark">
       <AnchorFallback />
@@ -49,7 +51,7 @@ export function Shell({ children, subheading, user }: { children: React.ReactNod
                   <Button size="sm" variant="ghost" href="/account" label={wide ? `${user.name}${user.org ? ` · ${user.org}` : ""}` : "Account"} />
                   <form action="/logout" method="post"><Button type="submit" size="sm" variant="ghost" label="Sign out" /></form>
                 </HStack>
-              ) : (
+              ) : sharedReport ? undefined : (
                 <Button size="sm" variant="primary" label="Sign in" href="/login" />
               )}
             />
@@ -60,4 +62,9 @@ export function Shell({ children, subheading, user }: { children: React.ReactNod
       </LinkProvider>
     </Theme>
   );
+}
+
+/** A light subtree inside the dark app: the scouting report reads on screen as it prints. */
+export function LightTheme({ children }: { children: React.ReactNode }) {
+  return <Theme theme={themes[defaultThemeSlug]} mode="light">{children}</Theme>;
 }

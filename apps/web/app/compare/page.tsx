@@ -10,13 +10,14 @@ import { db, requireScouting, type Q } from "@/lib/auth";
 import { fmtMetric, grouped, label, LOWER_IS_BETTER, ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
 import { flag, PctBar, PlayerAvatar } from "../ui";
+import { VerifiedMark } from "../verified";
 import { Pickers } from "./pickers";
 import { PercentileRadar } from "./radar";
 
 export const dynamic = "force-dynamic";
 
 type Option = { id: string; display_name: string; role: string };
-type Side = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
+type Side = { id: string; display_name: string; id_verified: boolean; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
 
 const SERIES = { a: "var(--color-data-categorical-teal)", b: "var(--color-data-categorical-orange)" };
 
@@ -26,7 +27,7 @@ const pick = (v: string | string[] | undefined) => { const s = Array.isArray(v) 
 async function load(tx: Q, id: string | null) {
   if (!id) return null;
   const [s] = await tx<Side[]>`
-    select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
+    select p.id, p.display_name, p.id_verified, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
     from players p join player_season_metrics m on m.player_id = p.id
     ${latestTeam(tx)}
     where p.id = ${id} and p.visible_to_scouts
@@ -75,6 +76,7 @@ async function ComparePage(tx: Q, { searchParams }: Props) {
             <Heading level={2}>{s.display_name}</Heading>
           </HStack>
           <Text color="secondary">{flag(s.team)} {s.team} · {ROLE_NAMES[s.role] ?? s.role} · {s.minutes} min</Text>
+          <VerifiedMark verified={s.id_verified} />
         </VStack>
         {key === "b" && <PlayerAvatar name={s.display_name} photo={s.photo_url} size={72} />}
       </HStack>

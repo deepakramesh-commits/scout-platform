@@ -37,6 +37,21 @@
 .mk-match { fill: var(--color-data-blue-3); stroke: var(--color-background-surface); stroke-width: 2; }
 .mk-scout { fill: var(--color-data-orange-4); stroke: var(--color-background-surface); stroke-width: 2; }
 
+/* ---------- Print: the scouting report on A4 ---------- */
+/* Paper gets the report alone, in its light theme: no navigation, no buttons, no motion, and no section split across pages.
+   Bars keep their fill even with background graphics off; every bar also prints its number, so grey scale loses nothing. */
+@page { size: A4; margin: 12mm; }
+@media print {
+  .astryx-app-shell-header, .no-print { display: none !important; }
+  body, .astryx-app-shell { background: none !important; }
+  /* The shell scrolls its content in a clipped box; on paper that box would cut the report off after the first sheets. */
+  .astryx-app-shell, .astryx-layout-content { overflow: visible !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .report .astryx-card { break-inside: avoid; box-shadow: none; }
+  .report h1, .report h2 { break-after: avoid; }
+  .report .pbar, .report .pbar > span { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+
 /* ---------- Motion ---------- */
 
 /* Percentile bars fill; the inline transform is the end state, so the keyframe only needs a start. */

@@ -23,7 +23,7 @@ import { Count, Demo, flag, PctBadge, PlayerAvatar, Standouts } from "../ui";
 export const dynamic = "force-dynamic";
 
 type Kpis = { players: number; matches: number; nations: number; events: number; qualified: number };
-type Featured = { id: string; display_name: string; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
+type Featured = { id: string; display_name: string; id_verified: boolean; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
 
 // The featured prospect is the leader of the first preset, so it always matches a list the scout can open.
 const FEATURED = PRESETS[0];
@@ -51,7 +51,7 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
              (select count(distinct m.player_id)::int from player_season_metrics m join players p on p.id = m.player_id
                where p.visible_to_scouts and m.style is not null) as qualified`,
     tx<Featured[]>`
-      select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
+      select p.id, p.display_name, p.id_verified, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
       from player_season_metrics m
       join players p on p.id = m.player_id
       ${latestTeam(tx)}
@@ -181,7 +181,7 @@ function FeaturedCard({ p }: { p: Featured }) {
           <PlayerAvatar name={p.display_name} photo={p.photo_url} size={96} />
           <VStack gap={1}>
             <Text type="label" color="accent">Featured prospect</Text>
-            <Heading level={2}>{p.display_name}</Heading>
+            <HStack gap={2} vAlign="center" wrap="wrap"><Heading level={2}>{p.display_name}</Heading><VerifiedMark verified={p.id_verified} /></HStack>
             <Text color="secondary">{flag(p.team)} {p.team} · {ROLE_NAMES[p.role] ?? p.role} · {p.minutes} min</Text>
           </VStack>
         </HStack>

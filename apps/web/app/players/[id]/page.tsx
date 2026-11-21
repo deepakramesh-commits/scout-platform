@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { ViewTransition } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { ClickableCard } from "@astryxdesign/core/ClickableCard";
@@ -8,35 +7,32 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Grid } from "@astryxdesign/core/Grid";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
-import { Link } from "@astryxdesign/core/Link";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Heading, Text } from "@astryxdesign/core/Text";
-import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting } from "@/lib/auth";
-import { standouts } from "@/lib/fit";
-import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, ROLE_NAMES, rolePlural, smallGroupNote } from "@/lib/metrics";
+import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, rolePlural, smallGroupNote } from "@/lib/metrics";
+import { recordProfileView } from "@/lib/profile-views";
 import { latestTeam } from "@/lib/queries";
 import {
-  getAttributes, getEvidence, getProfiles, SEASON_YEAR, SOURCE_LABEL,
+  getAttributes, getEvidence, getProfiles, pickProfile,
   type Attribute,
 } from "@/lib/scouting";
-import { Count, Demo, flag, PctBar, Pitch, PlayerAvatar } from "../../ui";
+import { Count, flag, PctBar, Pitch, PlayerAvatar } from "../../ui";
+import { PlayerActions } from "../../player-actions";
 import { FitCard } from "./fit-card";
-import { RiskAndMarket, type MarketPlayer } from "./risk-market";
+import { StandoutQualities } from "./standouts";
+import { PlayerHeader } from "./header";
+import { getPlayer, UUID, type Player, type PlayerWithoutData } from "./player";
+import { loadRiskMarket, MarketFacts, RiskAndMarket, TestsTable } from "./risk-market";
 import { ScoutView } from "./scout-view";
 import { SectionTabs } from "./tabs";
 
 export const dynamic = "force-dynamic";
 
-type Player = MarketPlayer & {
-  photo_url: string | null; photo_credit: string | null; photo_source_url: string | null; team: string | null; has_style: boolean;
-  per90: Record<string, number | null>; attr_percentiles: Record<string, number>;
-};
 type Similar = { id: string; display_name: string; photo_url: string | null; team: string | null; similarity: number };
 type Ev = { type: string; x: number; y: number; end_x: number | null; end_y: number | null; xg: number | null };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECTIONS = [
   { value: "overview", label: "Overview" },
   { value: "scout", label: "Scout view" },
@@ -59,75 +55,84 @@ export default async function PlayerPage({ params, searchParams }: {
   const tab = first(q.tab);
   const section: Section = isSection(tab) ? tab : "overview";
 
-  const [p] = await db((tx) => tx<Player[]>`
-    select p.display_name, p.photo_url, p.photo_credit, p.photo_source_url, lt.team, m.role, m.minutes, m.per90, m.percentiles,
-           m.attr_percentiles, m.peers, m.style is not null as has_style,
-           p.birth_year, p.height_cm, p.preferred_foot, p.nationality, p.demo_fields, p.id_verified,
-           m.competition_id, m.age_band, m.band_percentiles, m.band_peers,
-           (select count(*)::int from lineups l where l.player_id = p.id and l.minutes_played > 0) as matches
-    from players p
-    join player_season_metrics m on m.player_id = p.id
-    ${latestTeam(tx)}
-    where p.id = ${id} and p.visible_to_scouts
-    order by m.minutes desc limit 1`);
+  const p = await db((tx) => getPlayer(tx, id));
   if (!p) notFound();
-
+  await recordProfileView(id);
   const [attributes, profiles, evidence] = await db((tx) => Promise.all([getAttributes(tx), getProfiles(tx), getEvidence(tx, [id]).then((m) => m.get(id)!)]));
-  const attrs = new Map(attributes.map((a) => [a.key, a]));
   const fitParam = first(q.fit);
-  const profile = profiles.find((r) => r.id === fitParam) ?? profiles.find((r) => r.positions.includes(p.role)) ?? profiles[0];
+  const profile = pickProfile(profiles, fitParam, p.role);
+  const back = <HStack><Button variant="ghost" size="sm" label="Back to search" href="/" icon={<Icon icon="chevronLeft" />} /></HStack>;
+  const header = (
+    <Card elevation="low">
+      <PlayerHeader id={id} p={p}>
+        <HStack gap={2} wrap="wrap">
+          {p.role != null && <Button variant="primary" label="Compare with another player" href={`/compare?a=${id}`} />}
+          <Button label="Scouting report" href={`/players/${id}/report/print${profile ? `?profile=${profile.id}` : ""}`} />
+        </HStack>
+        <PlayerActions playerId={id} />
+      </PlayerHeader>
+    </Card>
+  );
+
+  if (p.role == null) {
+    return (
+      <VStack gap={6}>
+        {back}
+        {header}
+        <Card variant="muted">
+          <EmptyState title="No published match data yet"
+            description="Statistics, percentiles, fit and risk appear once a match he plays in is logged and passes the quality check. Until then this profile shows what he, his club or scouts have recorded." />
+        </Card>
+        <ProfileFacts id={id} p={p} />
+        <ScoutView id={id} user={user} attributes={attributes} evidence={evidence} peers={0} role={null} />
+      </VStack>
+    );
+  }
+
+  const attrs = new Map(attributes.map((a) => [a.key, a]));
   const href = (s: Section) => `/players/${id}?tab=${s}${fitParam ? `&fit=${fitParam}` : ""}`;
   const plural = rolePlural(p.role);
-  const ageDemo = p.demo_fields.includes("birth_year");
 
   return (
     <VStack gap={6}>
-      <HStack>
-        <Button variant="ghost" size="sm" label="Back to search" href="/" icon={<Icon icon="chevronLeft" />} />
-      </HStack>
-
-      <Card elevation="low">
-        <HStack gap={6} wrap="wrap" vAlign="center">
-          <VStack gap={1} hAlign="start" maxWidth={144}>
-            <ViewTransition name={`avatar-${id}`}>
-              <PlayerAvatar name={p.display_name} photo={p.photo_url} size={144} />
-            </ViewTransition>
-            {p.photo_credit && (
-              <Text type="supporting" size="xsm">
-                Photo: {p.photo_source_url ? <Link href={p.photo_source_url} isExternalLink size="xsm">{p.photo_credit}</Link> : p.photo_credit}
-              </Text>
-            )}
-          </VStack>
-          <StackItem size="fill">
-            <VStack gap={4}>
-              <VStack gap={2}>
-                <Heading level={1}>{p.display_name}</Heading>
-                <HStack gap={3} wrap="wrap" vAlign="center">
-                  <Text color="secondary">{flag(p.team)} {p.team}</Text>
-                  <Token label={ROLE_NAMES[p.role] ?? p.role} color="green" />
-                  <Text color="secondary">{p.matches} {p.matches === 1 ? "match" : "matches"} · {p.minutes} minutes</Text>
-                  <HStack gap={1} vAlign="center">
-                    <Text color="secondary">{p.birth_year == null ? "Age not recorded" : `Age ${SEASON_YEAR - p.birth_year}`}</Text>
-                    {p.birth_year != null && ageDemo && <Demo />}
-                  </HStack>
-                </HStack>
-              </VStack>
-              <HStack>
-                <Button variant="primary" label="Compare with another player" href={`/compare?a=${id}`} />
-              </HStack>
-            </VStack>
-          </StackItem>
-        </HStack>
-      </Card>
+      {back}
+      {header}
 
       <SectionTabs value={section} tabs={SECTIONS.map((s) => ({ ...s, href: href(s.value) }))} />
 
       {section === "overview" && <Overview id={id} p={p} attrs={attrs} plural={plural}
-        fit={profile && <FitCard playerId={id} profiles={profiles} profile={profile} attributes={attrs} evidence={evidence} peers={p.peers} role={p.role} />} />}
+        fit={profile && <FitCard pick={{ action: `/players/${id}`, name: "fit", profiles }} profile={profile} attributes={attrs} evidence={evidence} peers={p.peers} role={p.role} />} />}
       {section === "scout" && <ScoutView id={id} user={user} attributes={attributes} evidence={evidence} peers={p.peers} role={p.role} />}
       {section === "market" && <RiskAndMarket id={id} p={p} />}
       {section === "similar" && <SimilarPlayers id={id} p={p} plural={plural} />}
     </VStack>
+  );
+}
+
+/** Market facts and tests for a profile without match data. */
+async function ProfileFacts({ id, p }: { id: string; p: PlayerWithoutData }) {
+  const { facts, tests, can } = await db((tx) => loadRiskMarket(tx, id, { ...p, minutes: 0, competition_id: null }));
+  return (
+    <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4} align="start">
+      <Card>
+        <VStack gap={3}>
+          <HStack gap={2} hAlign="between" vAlign="center" wrap="wrap">
+            <Heading level={2}>Market</Heading>
+            {(can.market || can.player) && <Button size="sm" label="Edit" href={`/players/${id}/market`} />}
+          </HStack>
+          <MarketFacts facts={facts.filter((f) => f.label !== "Foot in match data")} />
+        </VStack>
+      </Card>
+      <Card>
+        <VStack gap={3}>
+          <HStack gap={2} hAlign="between" vAlign="center" wrap="wrap">
+            <Heading level={2}>Physical tests</Heading>
+            {can.addTest && <Button size="sm" label="Add a test" href={`/players/${id}/market#tests`} />}
+          </HStack>
+          {tests.length ? <TestsTable tests={tests} /> : <EmptyState isCompact title="No physical tests yet" description="Sprint, endurance and jump results appear here once a coach records them." />}
+        </VStack>
+      </Card>
+    </Grid>
   );
 }
 
@@ -138,39 +143,12 @@ async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; 
     where player_id = ${id} and x is not null and (
       type in ('ball_recovery', 'shot')
       or (type = 'carry' and y >= 62 and end_y between 30 and 62 and end_x >= 80))`);
-  const best = standouts(p.attr_percentiles);
   const small = smallGroupNote(p.peers, p.role);
   const keys = Object.keys(p.per90);
 
   return (
     <VStack gap={4}>
-      <VStack gap={2}>
-        <Heading level={2}>Standout qualities</Heading>
-        <Grid columns={{ minWidth: 200, repeat: "fit" }} gap={3}>
-          {best.map((k) => {
-            const a = attrs.get(k);
-            return (
-              <Card key={k} variant="muted" padding={3}>
-                <VStack gap={0}>
-                  <Heading level={2}><Count value={p.attr_percentiles[k]} /></Heading>
-                  <Text weight="semibold">{a?.label ?? k}</Text>
-                  <Text type="supporting">Percentile among {plural} · {a ? SOURCE_LABEL[a.source] : ""}</Text>
-                </VStack>
-              </Card>
-            );
-          })}
-          {best.length === 0 && (
-            <Card variant="muted" padding={3}>
-              <Text type="supporting">
-                {Object.keys(p.attr_percentiles).length
-                  ? `No attribute above the 85th percentile among ${plural}.`
-                  : "Not enough minutes to rank yet."}
-              </Text>
-            </Card>
-          )}
-        </Grid>
-        {best.length > 0 && small && <Text type="supporting">Treat these as indicative: {small}.</Text>}
-      </VStack>
+      <StandoutQualities p={p} attrs={attrs} plural={plural} />
 
       {fit}
 

@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { db } from "@/lib/auth";
+import { db, type Q } from "@/lib/auth";
 import { AVAILABILITY_LABEL, type Availability } from "@/lib/market-form";
 import { grouped, LOWER_IS_BETTER, metricLabel, ROLE_NAMES, rolePlural } from "@/lib/metrics";
 import { assessRisk, matchFoot, MIN_MATCHES, type RiskStatus } from "@/lib/risk";
@@ -27,7 +27,7 @@ type MatchCell = { match_id: string; index: number; opponent_stronger: boolean; 
 type CurveRow = { id: string; display_name: string; birth_year: number; value: number };
 
 const BAND_MIN_PEERS = 5;
-const STATUS: Record<RiskStatus, { label: string; color: "green" | "yellow" | "default" }> = {
+export const RISK_STATUS: Record<RiskStatus, { label: string; color: "green" | "yellow" | "default" }> = {
   good: { label: "Good", color: "green" }, caution: { label: "Caution", color: "yellow" }, unknown: { label: "Unknown", color: "default" },
 };
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -36,8 +36,14 @@ const isoDate = (s: string) => date(new Date(`${s}T00:00:00Z`));
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 
-export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) {
-  const [[market], tests, cells, roles, [foot], [comp], curve, can, [inRole]] = await db((tx) => Promise.all([
+/** What the risk lines and the market card need; a player without match data passes a null role and competition. */
+export type RiskPlayer = Pick<MarketPlayer, "minutes" | "birth_year" | "height_cm" | "preferred_foot" | "nationality" | "demo_fields" | "id_verified"> & {
+  role: string | null; competition_id: string | null;
+};
+export type Fact = { label: string; value: string | null; demo: boolean; note?: string };
+
+export async function loadRiskMarket(tx: Q, id: string, p: RiskPlayer) {
+  const [[market], tests, cells, roles, [foot], [comp], can, [inRole]] = await Promise.all([
     tx<Market[]>`select to_char(contract_end, 'YYYY-MM-DD') as contract_end, availability, transfer_conditions, representative, is_demo
                  from player_market where player_id = ${id}`,
     getTests(tx, id),
@@ -54,17 +60,12 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
       from events e join matches m on m.id = e.match_id
       where e.player_id = ${id} and e.type in ('pass', 'shot') and m.status = 'published'`,
     tx<{ name: string; min_minutes: number }[]>`select name, min_minutes from competitions where id = ${p.competition_id}`,
-    tx<CurveRow[]>`
-      select p.id, p.display_name, p.birth_year,
-             round((select avg(v::numeric) from jsonb_each_text(m.attr_percentiles) as e(k, v)))::int as value
-      from player_season_metrics m join players p on p.id = m.player_id
-      where m.role = ${p.role} and m.competition_id = ${p.competition_id} and m.attr_percentiles <> '{}' and p.birth_year is not null`,
     getEditRights(tx, id),
     tx<{ n: number }[]>`
       select count(*)::int as n from lineups l join matches m on m.id = l.match_id
       where l.player_id = ${id} and l.position = ${p.role} and l.minutes_played > 0
         and m.competition_id = ${p.competition_id} and m.status = 'published'`,
-  ]));
+  ]);
 
   const ageDemo = p.demo_fields.includes("birth_year");
   const risk = assessRisk({
@@ -77,7 +78,7 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
   });
   const fromMatch = matchFoot(foot ?? { right: 0, left: 0 });
   const demo = (field: string) => p.demo_fields.includes(field);
-  const facts: { label: string; value: string | null; demo: boolean; note?: string }[] = [
+  const facts: Fact[] = [
     { label: "Age", value: p.birth_year == null ? "Age not recorded" : `${SEASON_YEAR - p.birth_year} (born ${p.birth_year})`, demo: p.birth_year != null && ageDemo },
     { label: "Height", value: p.height_cm == null ? null : `${p.height_cm} cm`, demo: demo("height_cm") },
     { label: "Preferred foot", value: p.preferred_foot && cap(p.preferred_foot), demo: demo("preferred_foot") },
@@ -93,6 +94,19 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
     { label: "Transfer conditions", value: market?.transfer_conditions || null, demo: !!market?.is_demo },
     { label: "Representative", value: market?.representative || null, demo: !!market?.is_demo },
   ];
+  return { risk, facts, tests, cells, comp: comp ?? null, can };
+}
+
+export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) {
+  const [{ risk, facts, tests, cells, comp, can }, curve] = await db((tx) => Promise.all([
+    loadRiskMarket(tx, id, p),
+    tx<CurveRow[]>`
+      select p.id, p.display_name, p.birth_year,
+             round((select avg(v::numeric) from jsonb_each_text(m.attr_percentiles) as e(k, v)))::int as value
+      from player_season_metrics m join players p on p.id = m.player_id
+      where m.role = ${p.role} and m.competition_id = ${p.competition_id} and m.attr_percentiles <> '{}' and p.birth_year is not null`,
+  ]));
+  const ageDemo = p.demo_fields.includes("birth_year");
   const stronger = cells.filter((c) => c.opponent_stronger).map((c) => c.index);
   const weaker = cells.filter((c) => !c.opponent_stronger).map((c) => c.index);
   const plural = rolePlural(p.role);
@@ -112,7 +126,7 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
               <VStack gap={0}>
                 <HStack gap={2} vAlign="center" wrap="wrap">
                   <Text weight="semibold">{r.label}</Text>
-                  <Token size="sm" label={STATUS[r.status].label} color={STATUS[r.status].color} />
+                  <Token size="sm" label={RISK_STATUS[r.status].label} color={RISK_STATUS[r.status].color} />
                   {r.demo && <Demo />}
                 </HStack>
                 <Text type="supporting">{r.reason}</Text>
@@ -167,18 +181,7 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
               <Heading level={2}>Market</Heading>
               {(can.market || can.player) && <Button size="sm" label="Edit" href={`/players/${id}/market`} />}
             </HStack>
-            {facts.map((f) => (
-              <VStack key={f.label} gap={0}>
-                <HStack gap={3} hAlign="between" vAlign="center" wrap="wrap">
-                  <Text color="secondary">{f.label}</Text>
-                  <HStack gap={1} vAlign="center">
-                    <Text weight="semibold">{f.value ?? "Not recorded"}</Text>
-                    {f.value != null && f.demo && <Demo />}
-                  </HStack>
-                </HStack>
-                {f.note && <Text type="supporting" size="xsm">{f.note}</Text>}
-              </VStack>
-            ))}
+            <MarketFacts facts={facts} />
           </VStack>
         </Card>
         <Card>
@@ -231,6 +234,21 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
   );
 }
 
+export function MarketFacts({ facts }: { facts: Fact[] }) {
+  return facts.map((f) => (
+    <VStack key={f.label} gap={0}>
+      <HStack gap={3} hAlign="between" vAlign="center" wrap="wrap">
+        <Text color="secondary">{f.label}</Text>
+        <HStack gap={1} vAlign="center">
+          <Text weight="semibold">{f.value ?? "Not recorded"}</Text>
+          {f.value != null && f.demo && <Demo />}
+        </HStack>
+      </HStack>
+      {f.note && <Text type="supporting" size="xsm">{f.note}</Text>}
+    </VStack>
+  ));
+}
+
 function Split({ label, values }: { label: string; values: number[] }) {
   const v = avg(values);
   return (
@@ -281,7 +299,7 @@ function BandTable({ p, plural }: { p: MarketPlayer; plural: string }) {
   );
 }
 
-function TestsTable({ tests }: { tests: TestResult[] }) {
+export function TestsTable({ tests }: { tests: TestResult[] }) {
   return (
     <Table density="compact">
       <TableHeader>
