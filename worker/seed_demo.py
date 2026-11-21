@@ -6,7 +6,10 @@
 import argparse
 import datetime as dt
 import os
+import pathlib
 import random
+import shutil
+import subprocess
 import uuid
 
 import psycopg
@@ -122,6 +125,7 @@ def seed(cur):
                     (did("test", pid, test), pid, test, round(r.gauss(mean, sd), dp), when, verified, test))
     seed_reports(cur)
     seed_workflow(cur)
+    seed_engine(cur)
     cur.execute("select count(*) from players where %s - birth_year < 18 and 'birth_year' = any(demo_fields)", (TODAY.year,))
     print(f"demo: {len(ORGS)} orgs, {len(USERS)} users, {len(players)} players filled, {cur.fetchone()[0]} under 18")
 
@@ -222,6 +226,73 @@ def seed_workflow(cur):
         cur.execute("insert into agent_clients (org_id, player_id, is_demo) values (%s,%s,true) on conflict do nothing", (did("org", "agency"), pid))
 
 
+DEMO_SQUADS = {
+    "home": ("Lusaka Demo FC (demo)", ["Mwila", "Banda", "Phiri", "Tembo", "Zulu", "Mulenga", "Chanda", "Kabwe", "Lungu", "Mumba",
+                                       "Sakala", "Ngoma", "Mwale", "Chirwa", "Daka", "Musonda"]),
+    "away": ("Kabwe Demo United (demo)", ["Mutale", "Kasonde", "Mbewe", "Nkhata", "Simwanza", "Chola", "Bwalya", "Kapambwe",
+                                          "Mwansa", "Sinkala", "Katongo", "Chisenga", "Mutati", "Kalaba", "Njobvu", "Siame"]),
+}
+SQUAD_ROLES = ["GK", "FB", "CB", "CB", "FB", "DM", "CM", "AM", "RW", "LW", "ST", "GK", "CB", "CM", "LW", "ST"]
+VIDEO_SECONDS = 480  # two four-minute "halves" of a synthetic test pattern
+
+
+def demo_video(match_id) -> int | None:
+    """A labelled test-pattern video so the event log has footage to play; skipped without ffmpeg."""
+    root = pathlib.Path(os.environ.get("STORAGE_DIR", pathlib.Path(__file__).parent.parent / "storage")) / "videos"
+    out = root / f"{match_id}.mp4"
+    if not out.exists():
+        if not shutil.which("ffmpeg"):
+            return None
+        root.mkdir(parents=True, exist_ok=True)
+        # testsrc draws a running counter, so a clip visibly starts at the right second
+        done = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=960x540:rate=25:duration={VIDEO_SECONDS}",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "32", "-pix_fmt", "yuv420p", str(out)])
+        if done.returncode != 0:
+            out.unlink(missing_ok=True)
+            return None
+    return out.stat().st_size
+
+
+def seed_engine(cur):
+    """A demo league with one match waiting for its match sheet and tagging. No events: those are logged in the app."""
+    comp, match = did("comp", "demo"), did("match", "demo")
+    cur.execute("insert into competitions (id, name, country, age_group, season, min_minutes, is_demo) "
+                "values (%s, 'Demo League (demo)', 'Zambia', 'U20', '2026', 450, true) on conflict do nothing", (comp,))
+    teams = {}
+    for side, (name, surnames) in DEMO_SQUADS.items():
+        tid = did("team", side)
+        teams[side] = tid
+        cur.execute("insert into teams (id, name, country, org_id, is_demo) values (%s,%s,'Zambia',%s,true) on conflict do nothing",
+                    (tid, name, did("org", "academy") if side == "home" else None))
+        first = ["Joseph", "Patrick", "Moses", "Kelvin", "Emmanuel", "Lazarus", "Fashion", "Collins", "Enock", "Clatous",
+                 "Rodrick", "Benson", "Prince", "Gift", "Mathews", "Kings"]
+        for i, (given, surname) in enumerate(zip(first, surnames)):
+            pid = did("demo-player", side, i)
+            r = rng("demo-player", side, i)
+            cur.execute(
+                "insert into players (id, display_name, birth_year, nationality, primary_position, height_cm, preferred_foot, "
+                "demo_fields, academy_org_id, is_demo) values (%s,%s,%s,'Zambia',%s,%s,%s,%s,%s,true) on conflict do nothing",
+                (pid, f"{given} {surname} (demo)", TODAY.year - r.randint(18, 20), SQUAD_ROLES[i], r.randint(168, 190),
+                 r.choice(["right", "left"]), ["birth_year", "height_cm", "preferred_foot"], did("org", "academy") if side == "home" else None))
+            cur.execute("insert into squad_members (team_id, player_id, shirt_number) values (%s,%s,%s) on conflict do nothing",
+                        (tid, pid, i + 1))
+    size = demo_video(match)
+    cur.execute(
+        "insert into matches (id, competition_id, home_team_id, away_team_id, kickoff_at, status, video_provider, video_path, "
+        "video_size, video_status, is_demo) values (%s,%s,%s,%s,'2026-11-15 15:00+00','uploaded',%s,%s,%s,%s,true) on conflict do nothing",
+        (match, comp, teams["home"], teams["away"], "local" if size else None, f"{match}.mp4" if size else None, size,
+         "ready" if size else None))
+    for user, task in (("coordinator", "coordinator"), ("analyst", "analyst"), ("analyst2", "reviewer"), ("admin", "reviewer")):
+        cur.execute("insert into match_assignments (match_id, user_id, task) values (%s,%s,%s) on conflict do nothing",
+                    (match, did("user", user), task))
+    for org in ("club", "club2", "agency", "academy"):
+        cur.execute("insert into org_coverage (org_id, competition_id, owner, is_demo) values (%s,%s,false,true) on conflict do nothing",
+                    (did("org", org), comp))
+    cur.execute("insert into org_coverage (org_id, competition_id, owner, is_demo) values (%s,%s,true,true) on conflict do nothing",
+                (did("org", "federation"), comp))
+
+
 def foreign_keys(cur, target):
     cur.execute("""
         select c.conrelid::regclass::text, a.attname from pg_constraint c
@@ -239,15 +310,21 @@ def remove(cur):
     orgs = cur.fetchone()[0]
     for target, ids in (("players", players), ("app_users", users), ("orgs", orgs)):
         for table, col in foreign_keys(cur, target):
-            if table == "players":
-                cur.execute(f"update players set {col} = null where {col} = any(%s)", (ids,))
+            if table in ("players", "teams"):  # entities with their own demo flag: only the link to a demo account goes
+                cur.execute(f"update {table} set {col} = null where {col} = any(%s)", (ids,))
             elif table not in ("app_users",):
                 cur.execute(f"delete from {table} where {col} = any(%s)", (ids,))
     cur.execute("select table_name from information_schema.columns where table_schema = 'public' and column_name = 'is_demo' and table_name <> 'players'")
-    for (table,) in cur.fetchall():
-        if table not in ("app_users", "orgs"):
-            cur.execute(f"delete from {table} where is_demo")
+    last = ["matches", "teams", "competitions"]  # referenced by the rest
+    tables = [t for (t,) in cur.fetchall() if t not in ("app_users", "orgs", *last)]
+    for table in tables:
+        cur.execute(f"delete from {table} where is_demo")
     cur.execute("delete from players where is_demo")
+    for match_fk in ("events", "lineups", "player_match_index"):
+        cur.execute(f"delete from {match_fk} where match_id in (select id from matches where is_demo)")
+    cur.execute("delete from player_season_metrics where competition_id in (select id from competitions where is_demo)")
+    for table in last:
+        cur.execute(f"delete from {table} where is_demo")
     for col in ("birth_year", "height_cm", "preferred_foot"):
         cur.execute(f"update players set {col} = null, demo_fields = array_remove(demo_fields, %s) where %s = any(demo_fields)", (col, col))
     cur.execute("delete from app_users where is_demo")
