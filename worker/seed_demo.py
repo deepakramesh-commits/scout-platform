@@ -17,6 +17,7 @@ import psycopg
 DEFAULT_DB = "postgres://postgres:postgres@localhost:54330/postgres"
 NS = uuid.uuid5(uuid.NAMESPACE_URL, "scout-platform/demo")
 TODAY = dt.date(2026, 11, 21)
+DEMO_PASSWORD = "scout-demo"  # every demo login; see README
 UNDER_18 = 6  # profiles that land in the approval queue once phase 4 applies the age rule
 
 
@@ -71,12 +72,21 @@ def seed(cur):
     for key, name, kind in ORGS:
         cur.execute("insert into orgs (id, name, kind, is_demo) values (%s,%s,%s,true) on conflict (id) do update set name=excluded.name",
                     (did("org", key), name, kind))
+    cur.execute("update orgs set is_partner_agency = true where id = %s", (did("org", "agency"),))
     for key, org, role, name in USERS:
         uid = did("user", key)
-        cur.execute("insert into auth.users (id) values (%s) on conflict do nothing", (uid,))
-        cur.execute("insert into app_users (id, org_id, role, display_name, is_demo) values (%s,%s,%s,%s,true) "
-                    "on conflict (id) do update set org_id=excluded.org_id, role=excluded.role, display_name=excluded.display_name",
-                    (uid, did("org", org) if org else None, role, name))
+        email = f"{key}@demo.scout"
+        cur.execute("insert into auth.users (id, email, encrypted_password) values (%s, %s, crypt(%s, gen_salt('bf'))) "
+                    "on conflict (id) do update set email = excluded.email", (uid, email, DEMO_PASSWORD))
+        cur.execute("insert into app_users (id, org_id, role, display_name, email, is_demo) values (%s,%s,%s,%s,%s,true) "
+                    "on conflict (id) do update set org_id=excluded.org_id, role=excluded.role, display_name=excluded.display_name, email=excluded.email",
+                    (uid, did("org", org) if org else None, role, name, email))
+    # coverage: both clubs and the agency buy the competition; the federation owns it
+    cur.execute("select id from competitions")
+    for (cid,) in cur.fetchall():
+        for org in ("club", "club2", "agency", "federation", "academy"):
+            cur.execute("insert into org_coverage (org_id, competition_id, owner, is_demo) values (%s,%s,%s,true) on conflict do nothing",
+                        (did("org", org), cid, org == "federation"))
 
     cur.execute("""
         select p.id, p.primary_position, p.birth_year, p.height_cm, p.preferred_foot, p.demo_fields,
@@ -116,18 +126,143 @@ def seed(cur):
                     "insert into physical_tests (id, player_id, test, value, unit, tested_at, verified, is_demo) "
                     "select %s,%s,%s,%s,unit,%s,%s,true from physical_test_kinds where key=%s on conflict (id) do nothing",
                     (did("test", pid, test), pid, test, round(r.gauss(mean, sd), dp), when, verified, test))
+    seed_reports(cur)
+    seed_workflow(cur)
     cur.execute("select count(*) from players where %s - birth_year < 18 and 'birth_year' = any(demo_fields)", (TODAY.year,))
     print(f"demo: {len(ORGS)} orgs, {len(USERS)} users, {len(players)} players filled, {cur.fetchone()[0]} under 18")
 
 
+REPORTED = 60  # players with the most minutes get reports
+SEEN_IN = ["Two matches on video and one live", "Live at the tournament", "Full matches on video, plus a call with his coach",
+           "Training week and two matches", "Video of every match he started"]
+
+
+def seed_reports(cur):
+    """One or two demo scouts report on each of the top players; ratings follow the match evidence with noise,
+    so the screens show both agreement and disagreement between the numbers and the eye."""
+    cur.execute("select key, label, grp from attributes order by sort")
+    attrs = cur.fetchall()
+    cur.execute("""
+        select distinct on (m.player_id) m.player_id, m.attr_percentiles,
+               (select string_agg(distinct t.name, ', ') from lineups l join matches mt on mt.id = l.match_id
+                  join teams t on t.id in (mt.home_team_id, mt.away_team_id) and t.id <> l.team_id
+                where l.player_id = m.player_id and l.minutes_played > 0) as opponents
+        from player_season_metrics m where m.style is not null
+        order by m.player_id, m.minutes desc""")
+    rows = sorted(cur.fetchall(), key=lambda r: str(did("rank", r[0])))[:REPORTED]
+    for pid, pct, opponents in rows:
+        opp = (opponents or "").split(", ")
+        scouts = ["scout"] + (["scout2"] if rng("second", pid).random() < 0.5 else [])
+        for author in scouts:
+            r = rng("report", pid, author)
+            ratings = {}
+            for key, _label, grp in attrs:
+                if grp != "mental" and r.random() < 0.3:
+                    continue  # any rating can be left empty
+                base = pct.get(key, 62) / 10 + (0.8 if author == "scout2" else 0)
+                ratings[key] = max(1, min(10, round(r.gauss(base, 1.6))))
+            label = {k: l for k, l, _ in attrs}
+            ranked = sorted(ratings, key=ratings.get)
+            avg = sum(ratings.values()) / len(ratings)
+            rec = "sign" if avg >= 7 else "follow" if avg >= 5.5 else "pass"
+            rid = did("report", pid, author)
+            cur.execute(
+                "insert into scout_reports (id, player_id, org_id, author_id, seen_in, recommendation, strengths, weaknesses, comments, created_at, is_demo) "
+                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,true) on conflict (id) do nothing",
+                (rid, pid, did("org", "club" if author == "scout" else "club2"), did("user", author), r.choice(SEEN_IN), rec,
+                 f"{label[ranked[-1]]} and {label[ranked[-2]].lower()} stand out.",
+                 f"{label[ranked[0]]} needs work; {label[ranked[1]].lower()} is inconsistent.",
+                 f"Against {r.choice(opp) if opp[0] else 'a stronger side'} he kept working after a poor first half. "
+                 f"In training he asked the coach for extra finishing work. In the interview he spoke calmly about moving abroad.",
+                 dt.datetime(2026, 11, 21) - dt.timedelta(days=r.randint(3, 120))))
+            cur.executemany("insert into scout_ratings (report_id, attribute, rating) values (%s,%s,%s) on conflict do nothing",
+                            [(rid, k, v) for k, v in ratings.items()])
+
+
+def seed_workflow(cur):
+    """Signed-up players, consent, approval queue, verifications, shortlists, a saved search, agent clients."""
+    year = TODAY.year
+    signups = [  # key, name, age, user who claims it, guardian
+        ("kofi", "Kofi Mensah (demo)", 19, "player", None),
+        ("yaw", "Yaw Mensah (demo)", 16, None, "guardian"),
+    ]
+    for key, name, age, owner, guardian in signups:
+        pid = did("signup", key)
+        cur.execute(
+            "insert into players (id, display_name, birth_year, nationality, primary_position, origin, claimed_by, guardian_id, "
+            "academy_org_id, height_cm, preferred_foot, demo_fields, is_demo) values (%s,%s,%s,'Ghana','RW','sign_up',%s,%s,%s,%s,'right',%s,true) "
+            "on conflict (id) do nothing",
+            (pid, name, year - age, did("user", owner) if owner else None, did("user", guardian) if guardian else None,
+             did("org", "academy"), 174 if key == "kofi" else 168, ["birth_year", "height_cm", "preferred_foot"]))
+        cur.execute("insert into player_identity (player_id, legal_name, date_of_birth) values (%s,%s,%s) on conflict do nothing",
+                    (pid, name.replace(" (demo)", ""), dt.date(year - age, 3, 14)))
+        cur.execute(
+            "insert into consents (id, player_id, signed_by, scope, guardian_name, guardian_contact, is_demo) "
+            "values (%s,%s,%s,'{share_with_clubs}',%s,%s,true) on conflict do nothing",
+            (did("consent", key), pid, did("user", owner or guardian), "Ama Mensah" if guardian else None,
+             "+233 20 000 0000 (demo)" if guardian else None))
+
+    cur.execute("select id from players where origin = 'match_data' and status = 'live' order by id limit 40")
+    live = [r[0] for r in cur.fetchall()]
+    for i, pid in enumerate(live[:25]):  # the federation has checked some of its competition's players
+        r = rng("verify", pid)
+        done = i % 3 != 2
+        cur.execute(
+            "insert into verifications (player_id, federation_registration, id_checked, photo_checked, contract_status, verified_by, verified_at, is_demo) "
+            "values (%s,%s,%s,%s,%s,%s,%s,true) on conflict (player_id) do nothing",
+            (pid, f"FED-{r.randint(10000, 99999)}", done, done, r.choice(["under_contract", "free_agent"]), did("user", "federation"),
+             dt.datetime(2026, 10, 1) if done else None))
+
+    cur.execute("""select distinct on (m.player_id) m.player_id, m.role from player_season_metrics m join players p on p.id = m.player_id
+                   where m.style is not null and p.status = 'live' order by m.player_id, m.minutes desc""")
+    by_role: dict = {}
+    for pid, role in cur.fetchall():
+        by_role.setdefault(role, []).append(pid)
+    sl = did("shortlist", "scout")
+    cur.execute("insert into shortlists (id, owner_id, name, is_demo) values (%s,%s,'Summer window targets',true) on conflict do nothing",
+                (sl, did("user", "scout")))
+    for role, pids in by_role.items():
+        for rank, pid in enumerate(sorted(pids, key=lambda p: str(did("sl", p)))[:2 if role != "CB" else 3]):
+            cur.execute("insert into shortlist_players (shortlist_id, player_id, note, rank) values (%s,%s,%s,%s) on conflict do nothing",
+                        (sl, pid, rng("note", pid).choice(["Watch live next window", "Ask the agency about contract", "Strong on video, check pace"]), rank))
+    cur.execute("insert into saved_searches (id, owner_id, name, query, is_demo) values (%s,%s,%s,%s,true) on conflict do nothing",
+                (did("search", "scout"), did("user", "scout"), "Fast wingers under 24", "role=RW&sort=dribbles_completed&ageMax=24"))
+    for pid in live[:5]:
+        cur.execute("insert into agent_clients (org_id, player_id, is_demo) values (%s,%s,true) on conflict do nothing", (did("org", "agency"), pid))
+
+
+def foreign_keys(cur, target):
+    """(table, column) pairs that reference target(id), found in the catalogue so new tables are covered too."""
+    cur.execute("""
+        select c.conrelid::regclass::text, a.attname from pg_constraint c
+        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+        where c.contype = 'f' and c.confrelid = %s::regclass and c.conrelid::regclass::text not like 'auth.%%'""", (target,))
+    return cur.fetchall()
+
+
 def remove(cur):
-    cur.execute("delete from physical_tests where is_demo")
-    cur.execute("delete from player_market where is_demo")
+    """Every demo row, every row that points at one, and every row a demo account created through the app."""
+    cur.execute("select coalesce(array_agg(id), '{}') from players where is_demo")
+    players = cur.fetchone()[0]
+    cur.execute("select coalesce(array_agg(id), '{}') from app_users where is_demo")
+    users = cur.fetchone()[0]
+    cur.execute("select coalesce(array_agg(id), '{}') from orgs where is_demo")
+    orgs = cur.fetchone()[0]
+    for target, ids in (("players", players), ("app_users", users), ("orgs", orgs)):
+        for table, col in foreign_keys(cur, target):
+            if table == "players":  # a real player keeps his profile; only the link to a demo account goes
+                cur.execute(f"update players set {col} = null where {col} = any(%s)", (ids,))
+            elif table not in ("app_users",):
+                cur.execute(f"delete from {table} where {col} = any(%s)", (ids,))
+    cur.execute("select table_name from information_schema.columns where table_schema = 'public' and column_name = 'is_demo' and table_name <> 'players'")
+    for (table,) in cur.fetchall():
+        if table not in ("app_users", "orgs"):
+            cur.execute(f"delete from {table} where is_demo")
+    cur.execute("delete from players where is_demo")
     for col in ("birth_year", "height_cm", "preferred_foot"):
         cur.execute(f"update players set {col} = null, demo_fields = array_remove(demo_fields, %s) where %s = any(demo_fields)", (col, col))
-    cur.execute("delete from app_users where is_demo returning id")
-    ids = [r[0] for r in cur.fetchall()]
-    cur.execute("delete from auth.users where id = any(%s)", (ids,))
+    cur.execute("delete from app_users where is_demo")
+    cur.execute("delete from auth.users where id = any(%s)", (users,))
     cur.execute("delete from orgs where is_demo")
     print("demo data removed")
 
