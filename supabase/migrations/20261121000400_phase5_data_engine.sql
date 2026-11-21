@@ -189,3 +189,7 @@ begin
   update matches set status = next where id = mid;
 end $$;
 grant execute on function app.advance_match(uuid, text) to authenticated;
+
+-- Where each period starts and ends in the video, marked by the analyst: [{"period": 1, "start": 312.5, "end": 3190}].
+-- Rule flags read it to find events outside playing time and to turn video time into match minutes.
+alter table matches add column periods jsonb not null default '[]';

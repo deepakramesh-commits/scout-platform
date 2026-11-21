@@ -31,6 +31,8 @@ def fixture():
         ev(7, AWAY, b, 2, 2810, "goalkeeper", "claim", gk_type="keeper_sweeper"),
         ev(8, AWAY, b, 2, 2820, "foul_committed", card="yellow_card"),
         ev(9, AWAY, b, 2, 2830, "shot", "saved", x=100, y=40, body="Right Foot", xg=0.76, set_piece="penalty"),
+        ev(10, HOME, a, 2, 2840, "duel", "won", duel_type="aerial", aerial_won=True),
+        ev(11, HOME, a, 2, 2841, "pass", "complete", end=(70, 40), body="Head"),
     ]
     return match, lineups, events
 
@@ -59,3 +61,10 @@ def test_export_reads_back_through_kloppy(tmp_path):
     assert kinds.count("SHOT") == 2 and "PASS" in kinds and "CARRY" in kinds
     shots = [e for e in ds.events if e.event_type.value == "SHOT"]
     assert shots[0].result.value == "GOAL"
+
+
+def test_a_won_aerial_duel_becomes_the_flag_on_the_next_action():
+    events, _, _ = build_match(*fixture())
+    assert not any(e["type"]["name"] == "Duel" and e.get("duel", {}).get("type", {}).get("name") == "Aerial Lost" and e["minute"] == 47 for e in events)
+    header = next(e for e in events if e.get("id") == str(U("e11")))
+    assert header["pass"]["aerial_won"] is True

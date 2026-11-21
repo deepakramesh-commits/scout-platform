@@ -138,12 +138,20 @@ def build_match(match: dict, lineups: list[dict], events: list[dict]) -> tuple[l
                  "position": dict(zip(("id", "name"), ROLE_POSITION.get(l["position"], (0, "Substitute")))),
                  "jersey_number": l["shirt_number"] or 0} for l in starters]})
     possession, holder = 1, match["home_team_id"]
+    aerial_won: set = set()  # players whose next action carries the aerial-won flag
     for p in periods:
         in_period = [e for e in events if e["period"] == p]
         for tid in teams:
             add("Half Start", p, PERIOD_START.get(p, 0), tid, possession=possession, possession_team=ref(holder),
                 play_pattern={"id": 1, "name": "Regular Play"})
         for e in in_period:
+            if e["type"] == "duel" and (e["extra"] or {}).get("duel_type") == "aerial":
+                # StatsBomb has no "aerial won" event: it is a flag on the winner's next action
+                aerial_won.add(e["player_id"])
+                continue
+            if e["player_id"] in aerial_won and e["type"] in ("pass", "clearance", "shot", "miscontrol"):
+                aerial_won.discard(e["player_id"])
+                e = {**e, "extra": {**(e["extra"] or {}), "aerial_won": True}}
             if e["type"] in ON_BALL and e["team_id"] != holder:
                 possession, holder = possession + 1, e["team_id"]
             row = dict(

@@ -105,11 +105,11 @@ def test_style_vector_size_in_migrations_matches_keys():
 def test_attribute_percentile_ranks_the_mean_of_stand_in_percentiles_within_role():
     from metrics import attribute_percentiles
     out = pd.DataFrame([
-        {"role": "ST", "percentiles": {"goals": 100, "xg": 90}},
-        {"role": "ST", "percentiles": {"goals": 50, "xg": 40}},
-        {"role": "ST", "percentiles": {"goals": 10}},
-        {"role": "ST", "percentiles": {}},
-        {"role": "CB", "percentiles": {"goals": 5, "xg": 5}},
+        {"role": "ST", "percentiles": {"goals": 100, "xg": 90}, "per90": {"goals": 1.0, "xg": 0.8}},
+        {"role": "ST", "percentiles": {"goals": 50, "xg": 40}, "per90": {"goals": 0.5, "xg": 0.3}},
+        {"role": "ST", "percentiles": {"goals": 10}, "per90": {"goals": 0.1}},
+        {"role": "ST", "percentiles": {}, "per90": {}},
+        {"role": "CB", "percentiles": {"goals": 5, "xg": 5}, "per90": {"goals": 0.1, "xg": 0.1}},
     ])
     res = attribute_percentiles(out, {"finishing": ["goals", "xg"], "link_up": []})
     assert [r.get("finishing") for r in res] == [100, 67, 33, None, 100]
