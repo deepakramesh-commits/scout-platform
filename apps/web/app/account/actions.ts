@@ -1,9 +1,18 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { db, requireMe } from "@/lib/auth";
+import { db, isDenied, requireMe } from "@/lib/auth";
+import { UUID } from "@/lib/input";
 
-// The consents trigger hides the profile at once and queues deletion of personal data.
+export async function confirmAgent(form: FormData): Promise<string | void> {
+  await requireMe(["player", "guardian"]);
+  const [player, org] = [String(form.get("player") ?? ""), String(form.get("org") ?? "")];
+  if (!UUID.test(player) || !UUID.test(org)) return "This page is out of date. Reload it.";
+  const denied = await db((tx) => tx`select app.confirm_agent(${org}, ${player})`).then(() => false, (e: unknown) => { if (isDenied(e)) return true; throw e; });
+  if (denied) return "A player under 18 needs his guardian or one of our admins to confirm an agency.";
+  refresh();
+}
+
 export async function withdrawConsent(form: FormData): Promise<string | void> {
   await requireMe(["player", "guardian"]);
   if (form.get("confirm") !== "on") return "Tick the box to confirm you want to withdraw consent.";

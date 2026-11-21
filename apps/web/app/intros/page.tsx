@@ -27,7 +27,6 @@ export default async function Intros() {
 }
 
 async function IntrosPage(tx: Q, user: Me) {
-  // RLS decides the rows: the partner agency and admins see every request, a club sees its own.
   const intros = await tx<Intro[]>`
     select i.id, i.player_id, p.display_name, coalesce(p.id_verified, false) as id_verified, o.name as club,
            u.display_name as requested_by, i.message, i.status, i.created_at, i.is_demo

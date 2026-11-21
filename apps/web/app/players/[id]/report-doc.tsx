@@ -25,10 +25,6 @@ import { StandoutQualities } from "./standouts";
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const GROUP_TITLE = { technical: "Technical", physical: "Physical", tactical: "Tactical", mental: "Mentality" } as const;
 
-/**
- * Everything the scouting report shows, read as `viewer`: the signed-in scout, or for a shared link its creator, so the reader
- * sees exactly what the creator's organisation sees. Null when that viewer may not see the player.
- */
 export async function loadReport(id: string, profileId: string | null, viewer: string) {
   return db(async (tx) => {
     const p = await getPlayer(tx, id);
@@ -50,13 +46,12 @@ export async function loadReport(id: string, profileId: string | null, viewer: s
 
 export type ReportData = NonNullable<Awaited<ReturnType<typeof loadReport>>>;
 
-/** The report as one document. A light theme on screen as on paper, so print colours never depend on the dark app theme. */
 export function ScoutingReport({ data, tools, footnote }: { data: ReportData; tools?: React.ReactNode; footnote: string }) {
   const { id, p, attributes, profile, evidence, reports, summary, author, risk, facts, tests } = data;
   const attrs = new Map(attributes.map((a) => [a.key, a]));
   const groups = scoutGroupAverages(attributes, evidence.evidence);
   const groupDemo = (g: string) => reports.some((r) => r.is_demo && attributes.some((a) => a.grp === g && r.ratings[a.key] != null));
-  const mental = mentality(attributes, reports);
+  const mental = mentality(attributes, reports.map((r) => ({ ...r, author: null })));
   const recs = (["sign", "follow", "pass"] as const).flatMap((k) => {
     const n = reports.filter((r) => r.recommendation === k).length;
     return n ? [`${RECOMMENDATION_LABEL[k]} ${n}`] : [];

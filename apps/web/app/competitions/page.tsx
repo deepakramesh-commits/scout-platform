@@ -23,7 +23,6 @@ export default async function Competitions() {
 }
 
 async function CompetitionsPage(tx: Q) {
-  // Matches are readable only in covered competitions, so the counts are what this user's plan includes.
   const rows = await tx<Competition[]>`
     select c.id, c.name, c.season, c.country, c.age_group, c.is_demo,
            c.id in (select app.covered_competitions()) as covered,

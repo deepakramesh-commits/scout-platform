@@ -4,7 +4,6 @@ export const MATCH_STATUS = { uploaded: "Video uploaded", tagging: "Being logged
 export type MatchStatus = keyof typeof MATCH_STATUS;
 export type MatchRow = { id: string; kickoff_at: Date | null; status: MatchStatus; home_id: string; home: string; away_id: string; away: string; is_demo: boolean };
 
-/** Matches through RLS (covered competitions only), newest first. Filter by competition or team. */
 export const matchRows = (q: Q, by: { competition?: string; team?: string }) => q<MatchRow[]>`
   select m.id, m.kickoff_at, m.status, m.home_team_id as home_id, h.name as home, m.away_team_id as away_id, a.name as away, m.is_demo
   from matches m join teams h on h.id = m.home_team_id join teams a on a.id = m.away_team_id

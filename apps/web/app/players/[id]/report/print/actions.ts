@@ -7,7 +7,6 @@ import { UUID } from "../../player";
 
 export type ShareResult = { ok: true; url: string; expiresAt: string } | { ok: false; error: string };
 
-/** A read-only link to this report as its creator sees it; RLS checks the org, the creator and that he may see the player. */
 export async function createShareLink(playerId: string, profileId: string | null): Promise<ShareResult> {
   const user = await requireScouting();
   if (!UUID.test(playerId) || (profileId && !UUID.test(profileId))) return { ok: false, error: "This report is out of date. Reload the page." };

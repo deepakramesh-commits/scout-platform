@@ -1,7 +1,6 @@
 "use client";
 
-// Small form kit for server actions. Astryx inputs are controlled, so each field keeps its own state and submits by name.
-// An action returns an error message to show, or nothing on success; on success the fields remount from fresh props.
+// Astryx inputs are controlled, so each field keeps its own state and submits by name.
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Banner } from "@astryxdesign/core/Banner";
@@ -37,7 +36,6 @@ export function Submit({ label, variant = "primary", size = "md", name, value }:
   label: string; variant?: "primary" | "secondary" | "ghost" | "destructive"; size?: "sm" | "md"; name?: string; value?: string;
 }) {
   const { pending, data } = useFormStatus();
-  // With several submit buttons, only the one pressed spins.
   const mine = pending && (!name || data?.get(name) === value);
   return <Button type="submit" label={label} variant={variant} size={size} name={name} value={value} isLoading={mine} />;
 }

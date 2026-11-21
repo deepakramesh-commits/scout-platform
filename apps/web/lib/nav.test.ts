@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NAV, navFor, SCOUTING_ROLES, selected } from "./nav.ts";
+import { NAV, navFor, safeNext, SCOUTING_ROLES, selected } from "./nav.ts";
 import { ACCOUNT_TYPES } from "./signup.ts";
 
 test("every role a sign-up can create, and admin, has a navigation", () => {
@@ -36,4 +36,9 @@ test("selected picks the item that owns the path", () => {
   assert.equal(selected(scout, "/searchesque"), null);
   assert.equal(selected(scout, "/account"), null);
   assert.equal(selected(NAV.admin, "/admin/coverage"), "/admin/coverage");
+});
+
+test("sign-in returns only to a page on this site", () => {
+  assert.equal(safeNext("/players/1?tab=market"), "/players/1?tab=market");
+  for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example", "/\t/evil.example", ""]) assert.equal(safeNext(bad), "/", bad);
 });

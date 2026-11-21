@@ -1,9 +1,7 @@
 import { db, me } from "./auth";
 
-// Views by clubs and agencies are what "N clubs viewed this profile" counts; staff and the player's own side are not viewers.
 const VIEWER_ROLES = new Set(["scout", "agent", "federation", "coach"]);
 
-/** Records that the signed-in user opened a player's profile. Never throws: a lost view must not break the page. */
 export async function recordProfileView(playerId: string): Promise<void> {
   const user = await me();
   if (!user || !user.org_id || !VIEWER_ROLES.has(user.role)) return;

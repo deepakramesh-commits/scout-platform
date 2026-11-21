@@ -6,7 +6,6 @@ create table auth.users (
   encrypted_password text,
   created_at timestamptz not null default now()
 );
--- Same definition as Supabase: the user id is the `sub` claim the request carries.
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(coalesce(current_setting('request.jwt.claim.sub', true),
                          current_setting('request.jwt.claims', true)::jsonb ->> 'sub'), '')::uuid

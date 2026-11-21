@@ -12,7 +12,6 @@ export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await me().catch(() => null);
-  // Competitions this user's coverage includes: matches are visible only in covered competitions.
   const [{ names }] = user
     ? await db((tx) => tx<{ names: string | null }[]>`
         select string_agg(name || ' ' || season, ' · ' order by season desc, name) as names from competitions c

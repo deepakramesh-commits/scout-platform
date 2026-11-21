@@ -199,8 +199,6 @@ alter table competitions add column is_demo boolean not null default false;
 alter table teams add column is_demo boolean not null default false;
 alter table matches add column is_demo boolean not null default false;
 
--- (Here, not in phase 4, because it reads squad_members.)
--- A federation checks only players of the competitions it owns: in their line-ups or squads.
 create function app.federation_players() returns setof uuid language sql stable security definer set search_path = public as $$
   select l.player_id from lineups l join matches m on m.id = l.match_id
     join org_coverage c on c.competition_id = m.competition_id and c.owner and c.org_id = app.org()
@@ -230,11 +228,8 @@ create policy verify on physical_tests for update to authenticated
   using ((select app.is_admin()) or player_id in (select app.federation_players()))
   with check ((select app.is_admin()) or player_id in (select app.federation_players()));
 
--- Two tests on one day keep the order they were entered.
 alter table physical_tests add column created_at timestamptz not null default now();
 
--- Percentiles rank a player's latest test among every player's latest test of that kind, whoever is looking;
--- only the rows of players the caller may see come back.
 create function app.test_percentiles(pids uuid[]) returns table (
   player_id uuid, test text, label text, value numeric, unit text, tested_at date, verified boolean, is_demo boolean, pct int)
 language sql stable security definer set search_path = public as $$
@@ -249,3 +244,34 @@ language sql stable security definer set search_path = public as $$
   select player_id, test, label, value, unit, tested_at, verified, is_demo, pct from ranked
   where player_id = any(pids) and player_id in (select app.visible_players()) $$;
 grant execute on function app.test_percentiles(uuid[]) to authenticated;
+
+-- Phase 4 gate (cso): one federation rule; a withdrawn player leaves it at once, and what a federation sees is what it may verify.
+create or replace function app.federation_players() returns setof uuid language sql stable security definer set search_path = public as $$
+  select l.player_id from lineups l join matches m on m.id = l.match_id
+    join org_coverage c on c.competition_id = m.competition_id and c.owner and c.org_id = app.org()
+    join players p on p.id = l.player_id
+  where app.role() = 'federation' and p.status <> 'withdrawn'
+  union
+  select s.player_id from squad_members s join matches m on s.team_id in (m.home_team_id, m.away_team_id)
+    join org_coverage c on c.competition_id = m.competition_id and c.owner and c.org_id = app.org()
+    join players p on p.id = s.player_id
+  where app.role() = 'federation' and p.status <> 'withdrawn' $$;
+create function app.coordinator_players() returns setof uuid language sql stable security definer set search_path = public as $$
+  select s.player_id from match_assignments a join matches m on m.id = a.match_id
+    join squad_members s on s.team_id in (m.home_team_id, m.away_team_id)
+    join players p on p.id = s.player_id
+  where a.user_id = auth.uid() and a.task = 'coordinator' and app.role() = 'coordinator' and p.status <> 'withdrawn' $$;
+grant execute on function app.coordinator_players() to authenticated;
+-- Coordinators stay in app.is_staff() for match data, but see only the squads of the matches they are assigned.
+create or replace function app.sees_player(pid uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select app.role() in ('admin', 'tagger') or app.owns_player(pid) or pid in (select app.federation_players())
+      or pid in (select app.coordinator_players())
+      or exists (select 1 from players p where p.id = pid and p.visible_to_scouts and app.scouting()) $$;
+create or replace function app.visible_players() returns setof uuid language sql stable security definer set search_path = public as $$
+  select id from players p where app.role() in ('admin', 'tagger') or (p.visible_to_scouts and app.scouting())
+  union select app.my_players()
+  union select app.federation_players()
+  union select app.coordinator_players() $$;
+drop policy read on verifications;
+create policy read on verifications for select to authenticated
+  using ((select app.is_admin()) or player_id in (select app.federation_players()) or app.owns_player(player_id));

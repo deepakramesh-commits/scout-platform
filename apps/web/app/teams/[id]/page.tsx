@@ -7,6 +7,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting, type Q } from "@/lib/auth";
 import { matchRows } from "@/lib/competition";
+import { UUID } from "@/lib/input";
 import { ROLE_NAMES } from "@/lib/metrics";
 import { MatchList } from "../../match-list";
 import { PageHead, PlayerCell } from "../../page-kit";
@@ -15,7 +16,6 @@ import { flag } from "../../ui";
 export const dynamic = "force-dynamic";
 
 type Member = { id: string; display_name: string; id_verified: boolean; primary_position: string | null; is_demo: boolean; shirt: number | null; apps: number; minutes: number };
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POSITION_ORDER = Object.keys(ROLE_NAMES);
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
@@ -28,7 +28,6 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
 async function TeamView(tx: Q, id: string) {
   const [team] = await tx<{ name: string; country: string }[]>`select name, country from teams where id = ${id}`;
   if (!team) notFound();
-  // The squad is the registered squad plus anyone who played for the team; RLS hides profiles this user may not see.
   const [squad, matches] = await Promise.all([
     tx<Member[]>`
       with members as (

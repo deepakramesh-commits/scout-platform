@@ -2,12 +2,10 @@
 
 import { refresh } from "next/cache";
 import { db, requireScouting } from "@/lib/auth";
+import { str } from "@/lib/input";
 import { currentMatches } from "@/lib/queries";
 import { searchQuery } from "@/lib/search";
 
-const str = (form: FormData, k: string) => String(form.get(k) ?? "").trim();
-
-// Saving marks today's matches as seen, so the alert lists only players who match later.
 export async function saveSearch(form: FormData): Promise<string | void> {
   const user = await requireScouting();
   const name = str(form, "name");

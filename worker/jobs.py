@@ -19,7 +19,8 @@ from summaries import write_summary
 DEFAULT_DB = "postgres://postgres:postgres@localhost:54330/postgres"
 MAX_ATTEMPTS = 5
 STALE_MINUTES = 15  # a job running longer than this belonged to a worker that died
-EXPORTS = pathlib.Path(os.environ.get("STORAGE_DIR", pathlib.Path(__file__).parent.parent / "storage")) / "exports"
+STORAGE = pathlib.Path(os.environ.get("STORAGE_DIR", pathlib.Path(__file__).parent.parent / "storage"))
+EXPORTS = STORAGE / "exports"
 
 
 def compute_match_metrics(cur, payload):
@@ -36,6 +37,9 @@ def write_report(cur, payload):
 def delete_personal_data(cur, payload):
     """Consent withdrawn: identity, documents, market and test data go; the match record of events stays."""
     pid = payload["player_id"]
+    for doc in (STORAGE / "private" / "ids").glob(f"{pid}-*"):
+        doc.unlink()
+    cur.execute("update consents set guardian_contact = null where player_id = %s", (pid,))
     for table in ("player_identity", "player_market", "physical_tests", "verifications"):
         cur.execute(f"delete from {table} where player_id = %s", (pid,))
     cur.execute("update players set birth_year = null, height_cm = null, preferred_foot = null, photo_url = null, "

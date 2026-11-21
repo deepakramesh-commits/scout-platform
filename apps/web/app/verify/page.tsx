@@ -42,17 +42,18 @@ export default async function Verify({ searchParams }: { searchParams: Promise<P
 async function VerifyPage(tx: Q, user: Me, { q, show: rawShow, player }: Params) {
   const show = isShow(rawShow) ? rawShow : "unverified";
   const name = q?.trim() || null;
-  // RLS lists the players this user may verify: everyone for an admin; for a federation, visible players and its competition's.
   const [rows, [counts], [detail]] = await Promise.all([
     tx<Row[]>`
       select p.id, p.display_name, p.primary_position, p.id_verified, p.status, p.is_demo,
              (v.id_checked::int + v.photo_checked::int + (coalesce(v.federation_registration, '') <> '')::int) as checks
       from players p left join verifications v on v.player_id = p.id
-      where (${name}::text is null or p.display_name ilike '%' || ${name} || '%')
+      where (app.is_admin() or p.id in (select app.federation_players()))
+        and (${name}::text is null or p.display_name ilike '%' || ${name} || '%')
         and (${show} = 'all' or p.id_verified = (${show} = 'verified'))
       order by p.status <> 'pending_approval', coalesce(v.id_checked::int + v.photo_checked::int, 0) desc, p.display_name
       limit 60`,
-    tx<{ verified: number; total: number }[]>`select count(*) filter (where id_verified)::int as verified, count(*)::int as total from players`,
+    tx<{ verified: number; total: number }[]>`select count(*) filter (where id_verified)::int as verified, count(*)::int as total from players
+      where app.is_admin() or id in (select app.federation_players())`,
     player
       ? tx<Detail[]>`
           select p.id, p.display_name, p.primary_position, p.id_verified, p.status, p.is_demo, null::int as checks,

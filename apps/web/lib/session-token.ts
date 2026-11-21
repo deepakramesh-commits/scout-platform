@@ -1,8 +1,7 @@
-// A signed session token: `<user id>.<expiry, epoch seconds>.<HMAC-SHA256>`, base64url. Pure, so it is unit tested.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { UUID } from "./input.ts";
 
 export const SESSION_DAYS = 14;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const mac = (payload: string, secret: string) => createHmac("sha256", secret).update(payload).digest("base64url");
 
@@ -11,7 +10,6 @@ export function signSession(userId: string, secret: string, now = Date.now()): s
   return `${payload}.${mac(payload, secret)}`;
 }
 
-/** The user id, or null when the token is malformed, forged or expired. */
 export function verifySession(token: string | undefined, secret: string, now = Date.now()): string | null {
   const [userId, exp, sig] = token?.split(".") ?? [];
   if (!userId || !exp || !sig || !UUID.test(userId) || !/^\d+$/.test(exp)) return null;

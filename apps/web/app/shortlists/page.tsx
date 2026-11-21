@@ -35,7 +35,6 @@ async function ShortlistsPage(tx: Q, user: Me, wanted: string | undefined, find:
   const current = lists.find((l) => l.id === wanted) ?? lists[0];
   const entries = current
     ? await
-        // A player hidden since being shortlisted (consent withdrawn) stays on the list without his details.
         tx<Entry[]>`
           select sp.player_id, sp.note, sp.rank, p.display_name, coalesce(p.id_verified, false) as id_verified, p.primary_position, coalesce(p.is_demo, false) as is_demo
           from shortlist_players sp left join players p on p.id = sp.player_id

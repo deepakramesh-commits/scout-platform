@@ -10,7 +10,6 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { login, type LoginState } from "./actions";
 
-// The login-card template's column: at most 400 wide, shrinking on a phone.
 const contentStyle: CSSProperties = { width: "100%", maxWidth: 400 };
 
 export function LoginForm({ next }: { next: string }) {

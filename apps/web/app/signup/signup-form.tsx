@@ -28,7 +28,7 @@ const BLURB: Record<AccountType, string> = {
   agent: "Track your clients and send profiles to clubs",
   federation: "See your competition's data and verify player IDs",
   coach: "Add test results and follow your own players",
-  coordinator: "Fill in the match sheet on match day",
+  coordinator: "Fill in the match sheet on match day. An admin switches staff accounts on",
   analyst: "Log match events. An admin switches staff accounts on",
   player: "Create or claim your profile and see your own statistics",
   guardian: "Sign up a player under 18 in your care",
@@ -68,7 +68,6 @@ export function SignupForm() {
     });
     if (result) {
       setErrors(result);
-      // Field errors live on the details step; only a missing consent keeps the user on the consent step.
       if (Object.keys(result).some((k) => k !== "consent")) setStep("details");
     }
   });
@@ -136,7 +135,7 @@ export function SignupForm() {
               <TextInput label="Email" type="email" autoComplete="email" isRequired {...field("email")} />
               <TextInput label="Password" type="password" autoComplete="new-password" isRequired description="At least 10 characters" {...field("password")} />
               {spec.orgKind && <TextInput label={spec.orgLabel ?? "Organisation"} isRequired {...field("org")} />}
-              {type === "analyst" && <Text type="supporting">Analyst accounts start switched off. One of our admins switches yours on.</Text>}
+              {(type === "analyst" || type === "coordinator") && <Text type="supporting">Staff accounts start switched off. One of our admins switches yours on.</Text>}
             </VStack>
 
             {forPlayer && (

@@ -1,9 +1,3 @@
--- Phase 4: accounts, trust and workflow. Row-level security on every table.
---
--- Requests run as role `authenticated` (or `anon`) with the user id in request.jwt.claims, exactly as on Supabase.
--- Policy helpers live in schema `app` as security definer functions, so policies never recurse into app_users.
-
--- ---------- Profile state: one status drives visibility ----------
 drop policy scouts_read_visible on players;
 alter table players drop column visible_to_scouts;
 alter table players
@@ -16,21 +10,20 @@ alter table players
   add column approved_at timestamptz,
   add column is_demo boolean not null default false;
 
--- Section 4 rule 5: under 18 waits for an admin; a birth date that becomes known applies the same rule.
 create function app_age_rule() returns trigger language plpgsql as $$
 begin
   if new.status in ('live', 'pending_approval') and new.approved_at is null then
     if new.birth_year is not null and extract(year from now())::int - new.birth_year < 18 then
       new.status := 'pending_approval';
     elsif new.status = 'pending_approval' and new.origin = 'match_data' then
-      new.status := 'live';  -- age no longer known, or now an adult: shown as "age not recorded" or live
+      new.status := 'live';
     end if;
   end if;
   return new;
 end $$;
 create trigger players_age_rule before insert or update of birth_year, status on players
   for each row execute function app_age_rule();
-update players set birth_year = birth_year;  -- apply the rule to rows that already exist
+update players set birth_year = birth_year;
 
 alter table app_users add column active boolean not null default true,
                       add column email text;
@@ -43,14 +36,12 @@ alter table jobs add column last_error text, add column locked_at timestamptz, a
   add constraint jobs_status_check check (status in ('queued', 'running', 'done', 'failed'));
 create index on jobs (status, run_after);
 
--- The licensed partner agency is a separate company: it sees introduction requests, never rankings it could influence.
 alter table orgs add column is_partner_agency boolean not null default false;
 
--- ---------- Coverage: a subscription unlocks leagues, not features ----------
 create table org_coverage (
   org_id uuid references orgs on delete cascade,
   competition_id uuid references competitions on delete cascade,
-  owner boolean not null default false,  -- a federation owns its competition
+  owner boolean not null default false,
   is_demo boolean not null default false,
   primary key (org_id, competition_id)
 );
@@ -80,7 +71,7 @@ create table saved_searches (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references app_users on delete cascade,
   name text not null,
-  query text not null,          -- the search URL's query string
+  query text not null,
   seen_player_ids uuid[] not null default '{}',
   checked_at timestamptz not null default now(),
   is_demo boolean not null default false
@@ -105,7 +96,6 @@ create table profile_shares (
   is_demo boolean not null default false
 );
 
--- Recorded only: no messaging in this build.
 create table intro_requests (
   id uuid primary key default gen_random_uuid(),
   player_id uuid not null references players on delete cascade,
@@ -127,7 +117,7 @@ create table report_links (
   created_at timestamptz not null default now()
 );
 
--- ---------- Policy helpers ----------
+-- Policy helpers live in schema `app` as security definer functions, so policies never recurse into app_users.
 create schema app;
 create function app.role() returns text language sql stable security definer set search_path = public as $$
   select role from app_users where id = auth.uid() and active $$;
@@ -141,11 +131,9 @@ create function app.covers(cid uuid) returns boolean language sql stable securit
   select app.is_staff() or exists (select 1 from org_coverage where org_id = app.org() and competition_id = cid) $$;
 create function app.covers_match(mid uuid) returns boolean language sql stable security definer set search_path = public as $$
   select app.covers((select competition_id from matches where id = mid)) $$;
--- The player is me, my child, or a player of my academy.
 create function app.owns_player(pid uuid) returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from players p where p.id = pid and (
     p.claimed_by = auth.uid() or p.guardian_id = auth.uid() or (p.academy_org_id is not null and p.academy_org_id = app.org()))) $$;
--- Whom the scouting side may see. Federations also see their own competition's players while they wait for approval.
 create function app.sees_player(pid uuid) returns boolean language sql stable security definer set search_path = public as $$
   select app.is_staff() or app.owns_player(pid) or exists (
     select 1 from players p where p.id = pid and (
@@ -170,7 +158,6 @@ create function app.covered_competitions() returns setof uuid language sql stabl
 create function app.covered_matches() returns setof uuid language sql stable security definer set search_path = public as $$
   select id from matches where competition_id in (select app.covered_competitions()) $$;
 
--- ---------- Row-level security on every table ----------
 do $$ declare t text; begin
   for t in select tablename from pg_tables where schemaname = 'public' loop
     execute format('alter table %I enable row level security', t);
@@ -185,7 +172,6 @@ grant execute on all functions in schema app to anon, authenticated;
 alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public grant usage on sequences to authenticated;
 
--- Reference data
 create policy read_all on attributes for select using (true);
 create policy read_all on physical_test_kinds for select using (true);
 create policy read_all on competitions for select to authenticated using (true);
@@ -193,7 +179,6 @@ create policy read_all on teams for select to authenticated using (true);
 create policy admin_write on competitions for all to authenticated using (app.is_admin()) with check (app.is_admin());
 create policy admin_write on teams for all to authenticated using (app.is_admin()) with check (app.is_admin());
 
--- People and organisations
 create policy self_or_org on app_users for select to authenticated
   using (id = auth.uid() or org_id = app.org() or app.is_admin());
 create policy admin_write on app_users for update to authenticated using (app.is_admin()) with check (app.is_admin());
@@ -202,11 +187,9 @@ create policy admin_write on orgs for all to authenticated using (app.is_admin()
 create policy own_or_admin on org_coverage for select to authenticated using (org_id = app.org() or app.is_admin());
 create policy admin_write on org_coverage for all to authenticated using (app.is_admin()) with check (app.is_admin());
 
--- Players. Writes to status go through the approval and consent functions below.
 create policy visible on players for select to authenticated using (id in (select app.visible_players()));
 create policy owner_edit on players for update to authenticated
   using (app.owns_player(id) or app.is_admin()) with check (app.owns_player(id) or app.is_admin());
--- player_identity and ID documents: no scout-facing policy. Admins, federations verifying, and the player.
 create policy verify_only on player_identity for select to authenticated
   using (app.is_admin() or app.role() = 'federation' and app.sees_player(player_id) or app.owns_player(player_id));
 create policy verify_write on player_identity for all to authenticated
@@ -222,7 +205,6 @@ create policy write on verifications for all to authenticated
   using (app.is_admin() or app.role() = 'federation' and app.sees_player(player_id))
   with check (app.is_admin() or app.role() = 'federation' and app.sees_player(player_id));
 
--- Match data, gated by coverage
 create policy covered on matches for select to authenticated using (competition_id in (select app.covered_competitions()));
 create policy staff_write on matches for all to authenticated using (app.is_staff()) with check (app.is_staff());
 create policy covered on lineups for select to authenticated using (match_id in (select app.covered_matches()));
@@ -237,20 +219,17 @@ create policy covered on player_match_index for select to authenticated
   using (player_id in (select app.visible_players())
          and (competition_id in (select app.covered_competitions()) or player_id in (select app.my_players())));
 
--- Scouting data about a visible player
 create policy visible on player_market for select to authenticated using (player_id in (select app.visible_players()));
 create policy owner_or_agent on player_market for all to authenticated
   using (app.is_admin() or app.owns_player(player_id) or exists (select 1 from agent_clients a where a.player_id = player_market.player_id and a.org_id = app.org()))
   with check (app.is_admin() or app.owns_player(player_id) or exists (select 1 from agent_clients a where a.player_id = player_market.player_id and a.org_id = app.org()));
 create policy visible on physical_tests for select to authenticated using (player_id in (select app.visible_players()));
--- A coach, the player or an admin adds a test; only an admin or federation marks it verified.
 create policy add on physical_tests for insert to authenticated
   with check ((app.owns_player(player_id) and not verified) or app.is_admin() or app.role() = 'federation' and app.sees_player(player_id));
 create policy verify on physical_tests for update to authenticated
   using (app.is_admin() or app.role() = 'federation' and app.sees_player(player_id))
   with check (app.is_admin() or app.role() = 'federation' and app.sees_player(player_id));
 
--- A scout's ratings of a person: only members of the organisation that wrote them.
 create policy own_org on scout_reports for select to authenticated using (org_id = app.org());
 create policy write_own on scout_reports for insert to authenticated
   with check (org_id = app.org() and author_id = auth.uid() and app.role() in ('scout', 'agent', 'admin') and app.sees_player(player_id));
@@ -262,7 +241,6 @@ create policy write_own on scout_ratings for all to authenticated
   using (exists (select 1 from scout_reports r where r.id = report_id and r.author_id = auth.uid()))
   with check (exists (select 1 from scout_reports r where r.id = report_id and r.author_id = auth.uid()));
 
--- Requirement profiles: the shared ones, plus the organisation's own
 create policy shared_or_own on requirement_profiles for select to authenticated using (org_id is null or org_id = app.org());
 create policy write_own on requirement_profiles for all to authenticated
   using (org_id = app.org() or app.is_admin()) with check (org_id = app.org() or app.is_admin());
@@ -272,7 +250,6 @@ create policy write_own on requirement_items for all to authenticated
   using (exists (select 1 from requirement_profiles p where p.id = profile_id and (p.org_id = app.org() or app.is_admin())))
   with check (exists (select 1 from requirement_profiles p where p.id = profile_id and (p.org_id = app.org() or app.is_admin())));
 
--- Workflow tables owned by a user or an organisation
 create policy own on shortlists for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy own on shortlist_players for all to authenticated
   using (exists (select 1 from shortlists s where s.id = shortlist_id and s.owner_id = auth.uid()))
@@ -291,12 +268,10 @@ create policy agency_update on intro_requests for update to authenticated
   using ((select is_partner_agency from orgs where id = (select app.org()))) with check ((select is_partner_agency from orgs where id = (select app.org())));
 create policy own_org on report_links for all to authenticated
   using (org_id = app.org()) with check (org_id = app.org() and created_by = auth.uid() and app.sees_player(player_id));
--- Views are written by the viewer and read only by admins; players see a count through app.view_count().
 create policy write_own on profile_views for insert to authenticated with check (viewer_id = auth.uid());
 create policy admin_read on profile_views for select to authenticated using (app.is_admin());
 create policy admin_read on jobs for select to authenticated using (app.is_staff());
 
--- ---------- Workflow functions (the only way to change a profile's status) ----------
 create function app.decide_approval(pid uuid, decision text, note text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
@@ -308,7 +283,6 @@ begin
   where id = pid and status in ('pending_approval', 'declined', 'live');
 end $$;
 
--- Withdrawing consent hides the profile at once and queues deletion of personal data.
 create function app_consent_withdrawn() returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if new.revoked_at is not null and old.revoked_at is null then
@@ -319,11 +293,9 @@ begin
 end $$;
 create trigger consents_withdrawn after update of revoked_at on consents for each row execute function app_consent_withdrawn();
 
--- "12 clubs viewed you", without exposing who.
 create function app.view_count(pid uuid) returns int language sql stable security definer set search_path = public as $$
   select case when app.owns_player(pid) or app.is_admin() then (select count(distinct org_id)::int from profile_views where player_id = pid) end $$;
 
--- Verified when every check is done.
 create function app_verification_done() returns trigger language plpgsql security definer set search_path = public as $$
 begin
   update players set id_verified = (new.id_checked and new.photo_checked and coalesce(new.federation_registration, '') <> '')
@@ -332,20 +304,16 @@ begin
 end $$;
 create trigger verifications_done after insert or update on verifications for each row execute function app_verification_done();
 
--- Public numbers for the landing page; no player data.
 create function app.landing_stats() returns table (players int, matches int, competitions int, events int)
 language sql stable security definer set search_path = public as $$
   select (select count(*)::int from players where visible_to_scouts), (select count(*)::int from matches where status = 'published'),
          (select count(*)::int from competitions), (select count(*)::int from events) $$;
 
--- A shared report link works without login until it expires or the profile is hidden.
--- The page then renders as the link's creator, read-only, so the reader sees exactly what was shared.
 create function app.shared_report(tok text) returns table (player_id uuid, profile_id uuid, created_by uuid)
 language sql stable security definer set search_path = public as $$
   select l.player_id, l.profile_id, l.created_by from report_links l join players p on p.id = l.player_id
   where l.token = tok and l.expires_at > now() and p.visible_to_scouts $$;
 
--- A player signs up and claims the profile built from match data; an admin checks it is him before linking it.
 create table profile_claims (
   id uuid primary key default gen_random_uuid(),
   player_id uuid not null references players on delete cascade,
@@ -379,7 +347,6 @@ begin
   end if;
 end $$;
 grant execute on function app.decide_claim(uuid, text, text) to authenticated;
--- Claiming needs to find the profile by name, even one not live to scouts; only names and positions are exposed.
 create function app.claimable_players(q text) returns table (id uuid, display_name text, primary_position text, nationality text)
 language sql stable security definer set search_path = public as $$
   select id, display_name, primary_position, nationality from players
@@ -398,3 +365,66 @@ revoke update on consents from authenticated;
 grant update (revoked_at) on consents to authenticated;
 revoke update on intro_requests from authenticated;
 grant update (status) on intro_requests to authenticated;
+
+-- Phase 4 gate (cso): hidden profiles stay out of the public claim search, and an agent edits a player only after the adult player, his guardian or an admin confirms him.
+create or replace function app.claimable_players(q text) returns table (id uuid, display_name text, primary_position text, nationality text)
+language sql stable security definer set search_path = public as $$
+  select id, display_name, primary_position, nationality from players
+  where origin = 'match_data' and claimed_by is null and status = 'live' and length(q) >= 3
+    and display_name ilike '%' || replace(replace(replace(q, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+  order by display_name limit 20 $$;
+
+create or replace function app.decide_claim(cid uuid, decision text, note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare c profile_claims; who text;
+begin
+  if not app.is_admin() then raise exception 'only an admin decides a claim' using errcode = '42501'; end if;
+  if decision not in ('approved', 'declined') then raise exception 'bad decision'; end if;
+  update profile_claims set status = decision, note = coalesce(decide_claim.note, ''), decided_by = auth.uid(), decided_at = now()
+  where id = cid and status = 'pending' returning * into c;
+  if c.id is null then raise exception 'no pending claim %', cid; end if;
+  if decision = 'declined' then
+    delete from consents where player_id = c.player_id and signed_by = c.user_id;
+    return;
+  end if;
+  select role into who from app_users where id = c.user_id;
+  update players set claimed_by = case when who = 'player' then c.user_id else claimed_by end,
+                     guardian_id = case when who = 'guardian' then c.user_id else guardian_id end
+  where id = c.player_id and case when who = 'player' then claimed_by is null else guardian_id is null end;
+  if not found then raise exception 'this profile already has a %', who; end if;
+end $$;
+
+create or replace function app.shared_report(tok text) returns table (player_id uuid, profile_id uuid, created_by uuid)
+language sql stable security definer set search_path = public as $$
+  select l.player_id, l.profile_id, l.created_by from report_links l join players p on p.id = l.player_id
+  join app_users u on u.id = l.created_by and u.active and u.org_id = l.org_id
+  where l.token = tok and l.expires_at > now() and p.visible_to_scouts $$;
+
+alter table agent_clients add column confirmed_at timestamptz;
+revoke update on agent_clients from authenticated;
+drop policy own_org on agent_clients;
+create policy own_org on agent_clients for all to authenticated
+  using (org_id = app.org() and app.role() = 'agent')
+  with check (org_id = app.org() and app.role() = 'agent' and confirmed_at is null and app.sees_player(player_id));
+create policy owner_reads on agent_clients for select to authenticated using (app.owns_player(player_id) or (select app.is_admin()));
+create function app.represented_players() returns setof uuid language sql stable security definer set search_path = public as $$
+  select player_id from agent_clients where org_id = app.org() and app.role() = 'agent' and confirmed_at is not null $$;
+create function app.confirm_agent(oid uuid, pid uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not (app.is_admin() or exists (
+      select 1 from players p left join player_identity i on i.player_id = p.id
+      where p.id = pid and (p.guardian_id = auth.uid() or p.claimed_by = auth.uid()
+        and coalesce(i.date_of_birth <= current_date - interval '18 years', extract(year from now())::int - p.birth_year > 18)))) then
+    raise exception 'only an adult player, his guardian or an admin confirms an agent' using errcode = '42501';
+  end if;
+  update agent_clients set confirmed_at = now() where org_id = oid and player_id = pid and confirmed_at is null;
+end $$;
+grant execute on function app.represented_players(), app.confirm_agent(uuid, uuid) to authenticated;
+drop policy owner_or_agent on player_market;
+create policy owner_or_agent on player_market for all to authenticated
+  using (app.is_admin() or app.owns_player(player_id) or player_id in (select app.represented_players()))
+  with check (app.is_admin() or app.owns_player(player_id) or player_id in (select app.represented_players()));
+drop policy owner_edit on players;
+create policy owner_edit on players for update to authenticated
+  using (app.owns_player(id) or app.is_admin() or id in (select app.represented_players()))
+  with check (app.owns_player(id) or app.is_admin() or id in (select app.represented_players()));

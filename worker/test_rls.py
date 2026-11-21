@@ -1,7 +1,3 @@
-"""Row-level security audit: every table has RLS and a policy, and each user type sees only what section 4 allows.
-
-Integration test against the running database with the demo seed; each test runs in a transaction that is rolled back.
-"""
 import json
 import os
 import uuid
@@ -30,7 +26,6 @@ def cur():
 
 
 def act_as(cur, key=None):
-    """Become a demo user (or anon) the way the web app does: a role plus the user id in the JWT claims."""
     cur.execute("reset role")
     uid = str(did("user", key)) if key else None
     cur.execute("select set_config('request.jwt.claims', %s, true)", (json.dumps({"sub": uid} if uid else {}),))
@@ -202,3 +197,102 @@ def test_an_admin_approves_a_profile_claim_and_it_links(cur):
     cur.execute("reset role")
     assert one(cur, "select claimed_by from players where id = %s", pid) == did("user", "player")
     assert one(cur, "select note from profile_claims where id = %s", claim) == "Matched passport to federation record"
+
+
+def test_the_anonymous_claim_search_shows_only_live_unclaimed_profiles(cur):
+    pid, name = cur.execute("select id, display_name from players where origin = 'match_data' and claimed_by is null "
+                            "and status = 'live' order by display_name limit 1").fetchone()
+    cur.execute("update players set status = 'withdrawn' where id = %s", (pid,))
+    act_as(cur)
+    assert one(cur, "select count(*) from app.claimable_players(%s) where id = %s", name, pid) == 0
+    assert one(cur, "select count(*) from app.claimable_players('___')") == 0
+
+
+def test_an_agent_edits_market_data_only_after_the_player_confirms_him(cur):
+    pid = one(cur, "select id from players where status = 'live' and claimed_by is null "
+                   "and id not in (select player_id from agent_clients) limit 1")
+    upsert = ("insert into player_market (player_id, representative) values (%s, 'Self-appointed') "
+              "on conflict (player_id) do update set representative = excluded.representative")
+    act_as(cur, "agent")
+    cur.execute("insert into agent_clients (org_id, player_id) values (app.org(), %s)", (pid,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute(upsert, (pid,))
+    cur.connection.rollback()
+    act_as(cur, "agent")
+    cur.execute("insert into agent_clients (org_id, player_id) values (app.org(), %s)", (pid,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("update agent_clients set confirmed_at = now() where player_id = %s", (pid,))
+    cur.connection.rollback()
+    act_as(cur, "agent")
+    cur.execute("insert into agent_clients (org_id, player_id) values (app.org(), %s)", (pid,))
+    act_as(cur, "admin")
+    cur.execute("select app.confirm_agent(%s, %s)", (did("org", "agency"), pid))
+    act_as(cur, "agent")
+    cur.execute(upsert, (pid,))
+    assert cur.rowcount == 1
+
+
+def test_scouts_never_read_verification_details(cur):
+    assert one(cur, "select count(*) from verifications v join players p on p.id = v.player_id where p.status = 'live'") > 0
+    act_as(cur, "scout")
+    assert one(cur, "select count(*) from verifications") == 0
+
+
+def test_a_federation_loses_a_withdrawn_player_at_once(cur):
+    act_as(cur, "federation")
+    pid = one(cur, "select * from app.federation_players() limit 1")
+    cur.execute("reset role")
+    cur.execute("update players set status = 'withdrawn' where id = %s", (pid,))
+    act_as(cur, "federation")
+    assert one(cur, "select count(*) from app.federation_players() f where f = %s", pid) == 0
+    assert one(cur, "select count(*) from player_identity where player_id = %s", pid) == 0
+    act_as(cur, "federation")
+    assert one(cur, "select count(*) from (select app.federation_players() except select id from players) x") == 0
+
+
+def test_a_claimed_profile_cannot_be_claimed_again(cur):
+    pid = one(cur, "select id from players where origin = 'match_data' and claimed_by is null and status = 'live' limit 1")
+    first = uuid.uuid4()
+    cur.execute("insert into auth.users (id, email) values (%s, %s)", (first, f"{first}@test.scout"))
+    cur.execute("insert into app_users (id, role) values (%s, 'player')", (first,))
+    cur.execute("update players set claimed_by = %s where id = %s", (first, pid))
+    claim = one(cur, "insert into profile_claims (player_id, user_id) values (%s, %s) returning id", pid, did("user", "player"))
+    act_as(cur, "admin")
+    with pytest.raises(psycopg.errors.RaiseException):
+        cur.execute("select app.decide_claim(%s, 'approved', '')", (claim,))
+
+
+def test_a_shared_report_link_dies_when_its_author_leaves_the_organisation(cur):
+    pid = one(cur, "select id from players where status = 'live' limit 1")
+    cur.execute("insert into report_links (token, player_id, org_id, created_by, expires_at) "
+                "values ('t' || md5(random()::text), %s, %s, %s, now() + interval '1 day') returning token",
+                (pid, did("org", "club"), did("user", "scout")))
+    token = cur.fetchone()[0]
+    cur.execute("update app_users set active = false where id = %s", (did("user", "scout"),))
+    act_as(cur)
+    assert one(cur, "select count(*) from app.shared_report(%s)", token) == 0
+
+
+def test_a_coordinator_sees_only_the_squads_of_his_assigned_matches_never_withdrawn(cur):
+    me = did("user", "coordinator")
+    cur.execute("""select distinct s.player_id from match_assignments a join matches m on m.id = a.match_id
+                   join squad_members s on s.team_id in (m.home_team_id, m.away_team_id)
+                   where a.user_id = %s and a.task = 'coordinator'""", (me,))
+    squad = {r[0] for r in cur.fetchall()}
+    assert squad
+    cur.execute("select id from players where academy_org_id = (select org_id from app_users where id = %s)", (me,))
+    academy = {r[0] for r in cur.fetchall()}
+    gone = next(iter(squad - academy))
+    cur.execute("update players set status = 'withdrawn' where id = %s", (gone,))
+    act_as(cur, "coordinator")
+    cur.execute("select id from players")
+    assert {r[0] for r in cur.fetchall()} == (squad | academy) - {gone}
+
+
+def test_only_an_adult_player_his_guardian_or_an_admin_confirms_an_agent(cur):
+    pid = one(cur, "select id from players where academy_org_id is not null and claimed_by is null and guardian_id is null limit 1")
+    cur.execute("insert into agent_clients (org_id, player_id) values (%s, %s) on conflict do nothing", (did("org", "agency"), pid))
+    act_as(cur, "coach")
+    assert one(cur, "select app.owns_player(%s)", pid)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("select app.confirm_agent(%s, %s)", (did("org", "agency"), pid))

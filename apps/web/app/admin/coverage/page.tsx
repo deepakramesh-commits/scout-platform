@@ -25,7 +25,6 @@ export default async function Coverage() {
 }
 
 async function CoveragePage(tx: Q) {
-  // Our own staff see every competition through app.is_staff(), so internal orgs are not listed.
   const [orgs, competitions, covers] = await Promise.all([
     tx<Org[]>`select o.id, o.name, o.kind, o.is_demo, o.is_partner_agency, (select count(*)::int from app_users u where u.org_id = o.id) as users
               from orgs o where o.kind <> 'internal' order by o.kind, o.name`,
@@ -42,9 +41,13 @@ async function CoveragePage(tx: Q) {
       ) : (
         <Card>
           <Table density="compact" verticalAlign="top" style={{ minWidth: `${16 + competitions.length * 14}rem` }}>
+            <colgroup>
+              <col style={{ width: "16rem" }} />
+              {competitions.map((c) => <col key={c.id} style={{ width: "14rem" }} />)}
+            </colgroup>
             <TableHeader>
               <TableRow>
-                <TableHeaderCell style={{ width: "16rem" }}>Organisation</TableHeaderCell>
+                <TableHeaderCell>Organisation</TableHeaderCell>
                 {competitions.map((c) => (
                   <TableHeaderCell key={c.id}>{c.name} {c.season}</TableHeaderCell>
                 ))}

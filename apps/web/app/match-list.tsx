@@ -9,7 +9,6 @@ import { Demo, flag } from "./ui";
 const STATUS_COLOR = { uploaded: "gray", tagging: "blue", review: "yellow", published: "green" } as const;
 const date = (d: Date | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Date not set";
 
-/** Matches with their status: only published matches feed statistics. */
 export function MatchList({ matches }: { matches: MatchRow[] }) {
   return (
     <Table density="compact" style={{ minWidth: "30rem" }}>

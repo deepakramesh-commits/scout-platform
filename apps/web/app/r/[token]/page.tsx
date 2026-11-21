@@ -7,7 +7,6 @@ import { loadReport, ScoutingReport } from "../../players/[id]/report-doc";
 import { ReportTools } from "../../players/[id]/report/print/tools";
 
 export const dynamic = "force-dynamic";
-// The token is the credential: keep it out of search engines and out of the Referer sent to linked sites.
 export const metadata: Metadata = { title: "Scouting report · Scout", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 type Link = { player_id: string; profile_id: string | null; created_by: string };

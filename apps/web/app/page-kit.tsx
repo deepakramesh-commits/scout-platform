@@ -1,4 +1,3 @@
-// Shared pieces of the account and workflow screens: the page head, a player cell, and the loading state.
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Link } from "@astryxdesign/core/Link";
@@ -22,7 +21,6 @@ export function PageHead({ title, intro, actions }: { title: string; intro: stri
 
 export type PlayerRef = { id: string; display_name: string; id_verified: boolean; position?: string | null; is_demo?: boolean };
 
-/** A player's name linking to the profile, with the verified mark always beside it. */
 export function PlayerCell({ p, link = true }: { p: PlayerRef; link?: boolean }) {
   return (
     <VStack gap={0}>

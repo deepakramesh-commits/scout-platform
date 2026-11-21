@@ -1,7 +1,3 @@
-// Accounts and the per-request database role. Every page reads through `db()`, which runs its queries as role
-// `authenticated` (or `anon`) with the user's id in request.jwt.claims, exactly as Supabase does, so row-level
-// security decides what each user sees. `serviceSql` (superuser) is used only here, for sign-in and sign-up, the
-// work Supabase's auth service does, and by webhooks; app/no-service-sql.test.ts keeps it out of pages.
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -12,8 +8,11 @@ import { SCOUTING_ROLES } from "./nav.ts";
 import { planSignup, type SignupInput } from "./signup.ts";
 
 export type Q = postgres.TransactionSql;
+export const isDenied = (e: unknown) => typeof e === "object" && e !== null && "code" in e && e.code === "42501";
 export const SESSION_COOKIE = "scout_session";
 const DEV_SECRET = "scout-dev-session-secret-change-me";
+// An unknown email still costs one bcrypt round, so the response time does not reveal which emails have accounts.
+const UNKNOWN_EMAIL_HASH = "$2a$10$0BDALLlUhPD9vuBB1AF7ou8TPOeJPPU5C78r4jjL8FU3R0WvPxcti";
 
 function secret(): string {
   const s = process.env.SESSION_SECRET;
@@ -30,7 +29,6 @@ export type Me = {
   org_id: string | null; org_name: string | null; org_kind: string | null; is_partner_agency: boolean;
 };
 
-/** The signed-in user, read through RLS (a user may always read his own row). */
 export const me = cache(async (): Promise<Me | null> => {
   const uid = await currentUserId();
   if (!uid) return null;
@@ -41,7 +39,6 @@ export const me = cache(async (): Promise<Me | null> => {
   return row ?? null;
 });
 
-/** The page needs a signed-in, active user (optionally of certain roles); otherwise to sign-in. */
 export async function requireMe(roles?: string[]): Promise<Me> {
   const user = await me();
   if (!user) redirect("/login");
@@ -72,12 +69,11 @@ export async function endSession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** Checks the password with pgcrypto, as Supabase's auth.users does. Null for a wrong email or password. */
 export async function signIn(email: string, password: string): Promise<string | null> {
-  const [row] = await serviceSql<{ id: string }[]>`
-    select u.id from auth.users u join app_users a on a.id = u.id
-    where lower(u.email) = lower(${email.trim()}) and u.encrypted_password = crypt(${password}, u.encrypted_password)`;
-  if (!row) return null;
+  const [row] = await serviceSql<{ id: string | null }[]>`
+    select case when u.encrypted_password = crypt(${password}, coalesce(u.encrypted_password, ${UNKNOWN_EMAIL_HASH})) then a.id end as id
+    from (select 1) one left join auth.users u on lower(u.email) = lower(${email.trim()}) left join app_users a on a.id = u.id`;
+  if (!row?.id) return null;
   await startSession(row.id);
   return row.id;
 }
@@ -85,7 +81,6 @@ export async function signIn(email: string, password: string): Promise<string | 
 export type SignupOutcome = { ok: true } | { ok: false; errors: Record<string, string> };
 class ClaimTaken extends Error {}
 
-/** Creates the login, the organisation, and for players the profile, identity and consent, in one transaction. */
 export async function signUp(input: SignupInput): Promise<SignupOutcome> {
   const planned = planSignup(input);
   if (!planned.ok) return planned;
@@ -96,7 +91,7 @@ export async function signUp(input: SignupInput): Promise<SignupOutcome> {
 
   const userId = await serviceSql.begin(async (tx) => {
     const [user] = await tx<{ id: string }[]>`
-      insert into auth.users (id, email, encrypted_password) values (gen_random_uuid(), ${email}, crypt(${input.password}, gen_salt('bf')))
+      insert into auth.users (id, email, encrypted_password) values (gen_random_uuid(), ${email}, crypt(${input.password}, gen_salt('bf', 10)))
       returning id`;
     let orgId: string | null = null;
     if (plan.orgKind) {
@@ -110,13 +105,10 @@ export async function signUp(input: SignupInput): Promise<SignupOutcome> {
       const guardianName = isPlayer ? input.guardianName?.trim() || null : input.name.trim();
       let playerId = plan.claimPlayerId;
       if (playerId) {
-        // Claiming a profile built from match data: an admin links it after checking (app.decide_claim).
         const [open] = await tx`select 1 from players where id = ${playerId} and origin = 'match_data' and claimed_by is null`;
         if (!open) throw new ClaimTaken();
         await tx`insert into profile_claims (player_id, user_id) values (${playerId}, ${user.id})`;
       } else {
-        // Under 18 waits for an admin. Set here because the age trigger counts birth years and would let a 17-year-old born
-        // late in the year through as 18.
         const [player] = await tx<{ id: string }[]>`
           insert into players (display_name, birth_year, nationality, primary_position, origin, claimed_by, guardian_id, status)
           values (${plan.player.name}, ${plan.player.birthYear}, ${input.nationality?.trim() || null}, ${input.position || null}, 'sign_up',

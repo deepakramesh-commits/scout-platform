@@ -116,8 +116,8 @@ export type EditRights = { market: boolean; player: boolean; addTest: boolean; v
 export async function getEditRights(q: Q, playerId: string): Promise<EditRights> {
   const [r] = await q<{ admin: boolean; owner: boolean; agent: boolean; federation: boolean }[]>`
     select app.is_admin() as admin, app.owns_player(${playerId}) as owner,
-           exists (select 1 from agent_clients a where a.player_id = ${playerId} and a.org_id = app.org()) as agent,
-           coalesce(app.role() = 'federation' and app.sees_player(${playerId}), false) as federation`;
+           ${playerId} in (select app.represented_players()) as agent,
+           ${playerId} in (select app.federation_players()) as federation`;
   return {
     market: r.admin || r.owner || r.agent,
     player: r.admin || r.owner,

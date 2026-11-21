@@ -1,4 +1,4 @@
-// Sign-up for every user type in the build prompt's table, with section 4's age rule. Pure, so it is unit tested.
+import { UUID } from "./input.ts";
 
 export const ACCOUNT_TYPES = {
   scout: { label: "Club scout", role: "scout", orgKind: "club", orgLabel: "Club" },
@@ -14,10 +14,8 @@ export type AccountType = keyof typeof ACCOUNT_TYPES;
 
 export type SignupInput = {
   type: string; name: string; email: string; password: string; org?: string;
-  /** Player and guardian: the player's details. */
   playerName?: string; dateOfBirth?: string; position?: string; nationality?: string;
   guardianName?: string; guardianContact?: string; consent?: boolean;
-  /** Player and guardian: claim this profile built from match data instead of creating a new one. */
   claimPlayerId?: string;
 };
 export type SignupPlan = {
@@ -28,7 +26,8 @@ export type SignupPlan = {
 export type SignupResult = { ok: true; plan: SignupPlan } | { ok: false; errors: Record<string, string> };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The roles app.is_staff() trusts with every match and every pending profile.
+const STAFF_ROLES: string[] = ["admin", "tagger", "coordinator"];
 const POSITIONS = ["GK", "CB", "FB", "DM", "CM", "AM", "LW", "RW", "ST"];
 
 export function ageOn(dateOfBirth: string, today: Date): number {
@@ -69,6 +68,5 @@ export function planSignup(input: SignupInput, today = new Date()): SignupResult
   const claimPlayerId = input.claimPlayerId?.trim() || null;
   if (claimPlayerId && (!(type === "player" || type === "guardian") || !UUID.test(claimPlayerId))) errors.claimPlayerId = "Choose the profile to claim from the list";
   if (Object.keys(errors).length) return { ok: false, errors };
-  // Staff roles are never self-granted: an admin switches an analyst on.
-  return { ok: true, plan: { type, role: spec.role, orgKind: spec.orgKind, active: type !== "analyst", player, claimPlayerId } };
+  return { ok: true, plan: { type, role: spec.role, orgKind: spec.orgKind, active: !STAFF_ROLES.includes(spec.role), player, claimPlayerId } };
 }

@@ -1,5 +1,3 @@
-// Find a visible player by name and act on each match. A GET form, so the search runs on the server and stays in the URL;
-// a dropdown of every player would ship hundreds of options to a phone.
 import Form from "next/form";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";

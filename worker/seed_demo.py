@@ -223,7 +223,7 @@ def seed_workflow(cur):
     cur.execute("insert into saved_searches (id, owner_id, name, query, is_demo) values (%s,%s,%s,%s,true) on conflict do nothing",
                 (did("search", "scout"), did("user", "scout"), "Fast wingers under 24", "role=RW&sort=dribbles_completed&ageMax=24"))
     for pid in live[:5]:
-        cur.execute("insert into agent_clients (org_id, player_id, is_demo) values (%s,%s,true) on conflict do nothing", (did("org", "agency"), pid))
+        cur.execute("insert into agent_clients (org_id, player_id, is_demo, confirmed_at) values (%s,%s,true,now()) on conflict do nothing", (did("org", "agency"), pid))
 
 
 DEMO_SQUADS = {

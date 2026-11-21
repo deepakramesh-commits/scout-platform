@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { db, requireMe } from "@/lib/auth";
+import { db, isDenied, requireMe } from "@/lib/auth";
 import { isVerified, parseVerification } from "@/lib/workflow";
 
 export async function saveVerification(form: FormData): Promise<string | void> {
@@ -11,7 +11,6 @@ export async function saveVerification(form: FormData): Promise<string | void> {
   const v = parsed.value;
   const player = String(form.get("player") ?? "");
   const done = isVerified(v);
-  // The verifications trigger sets players.id_verified; RLS limits a federation to players it can see.
   const saved = await db(async (tx) => {
     const rows = await tx`
       insert into verifications (player_id, federation_registration, id_checked, photo_checked, contract_status, note, verified_by, verified_at)
@@ -29,7 +28,7 @@ export async function saveVerification(form: FormData): Promise<string | void> {
     }
     return rows.length > 0;
   }).catch((e: unknown) => {
-    if (typeof e === "object" && e !== null && "code" in e && e.code === "42501") return false;
+    if (isDenied(e)) return false;
     throw e;
   });
   if (!saved) return "You cannot verify this player.";

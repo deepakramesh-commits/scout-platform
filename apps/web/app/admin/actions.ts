@@ -1,13 +1,11 @@
 "use server";
 
-// Admin decisions. Status changes go only through the app.* workflow functions; the rest are admin-only RLS writes.
 import { refresh } from "next/cache";
 import { db, requireMe } from "@/lib/auth";
+import { str } from "@/lib/input";
 
-const str = (form: FormData, k: string) => String(form.get(k) ?? "").trim();
 const DECISIONS = ["approved", "declined"];
 
-/** Approve or decline; a decline needs a note, because the player and guardian read it. */
 function decision(form: FormData): { decision: string; note: string } | string {
   const d = str(form, "decision");
   const note = str(form, "note");

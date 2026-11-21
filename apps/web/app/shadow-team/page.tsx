@@ -91,8 +91,7 @@ const surname = (name: string) => {
   return last.length > 12 ? `${last.slice(0, 11)}…` : last;
 };
 
-// A vertical pitch, 68 wide and 105 long, our goal at the bottom. Each slot shows its first choice and how many follow.
-function ShadowPitch({ slots }: { slots: Record<Slot, { id: string; name: string }[]> }) {
+function ShadowPitch({ slots }: { slots: Record<Slot, { id: string; name: string; id_verified: boolean }[]> }) {
   const line = { fill: "none", stroke: "var(--pitch-line)", strokeWidth: 0.4 };
   const filled = SLOTS.filter((s) => slots[s].length).length;
   return (
@@ -112,10 +111,10 @@ function ShadowPitch({ slots }: { slots: Record<Slot, { id: string; name: string
         const [top, ...rest] = slots[s];
         return (
           <g key={s}>
-            <circle cx={cx} cy={cy} r="3.6" fill={top ? "var(--color-icon-green)" : "none"} stroke={top ? "none" : "var(--pitch-line)"} strokeWidth="0.4" strokeDasharray={top ? undefined : "1 1"} />
-            <text x={cx} y={cy + 1} textAnchor="middle" fontSize="2.6" fontWeight="700" fill={top ? "var(--pitch)" : "var(--pitch-line)"}>{s}</text>
-            <text x={cx} y={cy + 7} textAnchor="middle" fontSize="2.8" fill={top ? "var(--color-text-primary)" : "var(--pitch-line)"}>{top ? surname(top.name) : "open"}</text>
-            {rest.length > 0 && <text x={cx} y={cy + 10.4} textAnchor="middle" fontSize="2.2" fill="var(--pitch-line)">+{rest.length} more</text>}
+            <circle cx={cx} cy={cy} r="3.6" fill={top?.id_verified ? "var(--color-icon-green)" : "none"} stroke={top?.id_verified ? "none" : top ? "var(--color-text-primary)" : "var(--pitch-line)"} strokeWidth={top ? "0.6" : "0.4"} strokeDasharray={top?.id_verified ? undefined : "1 1"} />
+            <text x={cx} y={cy + 1} textAnchor="middle" fontSize="2.6" fontWeight="700" fill={top?.id_verified ? "var(--pitch)" : "var(--color-text-primary)"}>{s}</text>
+            <text x={cx} y={cy + 7} textAnchor="middle" fontSize="2.8" fill={top ? "var(--color-text-primary)" : "var(--pitch-line)"}>{top ? `${surname(top.name)}${top.id_verified ? "" : " ?"}` : "open"}</text>
+            {rest.length > 0 && <text x={cx} y={cy + 9.8} textAnchor="middle" fontSize="2.2" fill="var(--pitch-line)">+{rest.length} more</text>}
           </g>
         );
       })}

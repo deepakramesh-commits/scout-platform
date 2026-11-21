@@ -11,7 +11,6 @@ import type { ShareResult } from "./actions";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
-/** Print, and (for the report's owner) a share link to copy. Hidden on paper by `.no-print`. */
 export function ReportTools({ share, children }: { share?: () => Promise<ShareResult>; children?: React.ReactNode }) {
   const [result, setResult] = useState<ShareResult | null>(null);
   const [copied, setCopied] = useState(false);

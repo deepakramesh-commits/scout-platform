@@ -61,3 +61,23 @@ def test_write_report_job_stores_a_template_summary(conn, monkeypatch):
     assert c.execute("select status from jobs where id = %s", (jid,)).fetchone()[0] == "done"
     assert c.execute("select source from player_summaries where player_id = %s", (pid,)).fetchone()[0] == "template"
     c.execute("update jobs set run_after = now() where status = 'queued' and run_after > now() + interval '23 hours'")
+
+
+def test_withdrawal_deletes_the_id_documents_and_the_guardian_contact(tmp_path, monkeypatch):
+    try:
+        conn = psycopg.connect(DB, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    monkeypatch.setattr(jobs, "STORAGE", tmp_path)
+    with conn.cursor() as cur:
+        pid = cur.execute("select player_id from consents limit 1").fetchone()[0]
+        cur.execute("update consents set guardian_contact = '+233 20 000 0000' where player_id = %s", (pid,))
+        ids = tmp_path / "private" / "ids"
+        ids.mkdir(parents=True)
+        (ids / f"{pid}-1.pdf").write_bytes(b"%PDF")
+        (ids / "someone-else-1.pdf").write_bytes(b"%PDF")
+        jobs.delete_personal_data(cur, {"player_id": str(pid)})
+        assert [p.name for p in ids.iterdir()] == ["someone-else-1.pdf"]
+        assert cur.execute("select count(*) from consents where player_id = %s and guardian_contact is not null", (pid,)).fetchone()[0] == 0
+    conn.rollback()
+    conn.close()

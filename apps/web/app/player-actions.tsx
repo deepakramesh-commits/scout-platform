@@ -1,5 +1,3 @@
-// Phase 4 actions for one player: add to a shortlist, and (club scouts) request an introduction from the partner agency.
-// Self-contained so the player page mounts it with one line: <PlayerActions playerId={id} />.
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -51,7 +49,6 @@ export async function AddToShortlist({ playerId }: { playerId: string }) {
 
 type Intro = { status: keyof typeof INTRO_STATUS; created_at: Date };
 
-/** `compact` drops the message field, for rows in a list. */
 export async function RequestIntro({ playerId, compact = false }: { playerId: string; compact?: boolean }) {
   const [last] = await db((tx) => tx<Intro[]>`
     select status, created_at from intro_requests where player_id = ${playerId} and from_org = (select app.org())

@@ -17,7 +17,6 @@ export type SearchRow = {
   value: number | null; pct: number | null; peers: number; attr_percentiles: Record<string, number>; id_verified: boolean;
 };
 
-/** The search list for a set of filters, through the caller's RLS: a player can appear once per position. */
 export const searchRows = (q: Q, f: SearchFilters, limit = 100) => {
   const sort = f.sort;
   if (!sort) return Promise.resolve([] as SearchRow[]);
@@ -38,12 +37,10 @@ export const searchRows = (q: Q, f: SearchFilters, limit = 100) => {
       and (${f.ageMin}::int is null or ${SEASON_YEAR} - p.birth_year >= ${f.ageMin})
       and (${f.ageMax}::int is null or ${SEASON_YEAR} - p.birth_year <= ${f.ageMax})
       and (${f.contractBy}::date is null or pm.contract_end <= ${f.contractBy}::date)
-    -- players under the minutes threshold have no percentiles; rank them after the qualified ones so tiny samples can't top the list
     order by (m.percentiles ->> ${sort}) is null, case when ${ascending} then (m.per90 ->> ${sort})::float8 end asc nulls last, value desc nulls last, p.display_name
     limit ${limit}`;
 };
 
-/** What the search filters can take, read through RLS. */
 export const searchOptions = async (q: Q): Promise<SearchOptions> => {
   const [keys, roles, countries] = await Promise.all([
     metricKeys(q),
@@ -53,7 +50,6 @@ export const searchOptions = async (q: Q): Promise<SearchOptions> => {
   return { keys, roles, countries };
 };
 
-/** Every player a saved query string matches now, through the caller's RLS. */
 export async function currentMatches(q: Q, query: string) {
   const filters = parseSearch(Object.fromEntries(new URLSearchParams(query)), await searchOptions(q));
   const rows = await searchRows(q, filters, 5000);

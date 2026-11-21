@@ -10,7 +10,6 @@ export type Claimable = { id: string; display_name: string; primary_position: st
 
 const text = (v: unknown) => (typeof v === "string" ? v : "");
 
-/** The form posts plain values; planSignup (inside signUp) validates every one of them. */
 export async function signup(raw: Record<string, unknown>): Promise<SignupErrors> {
   const input: SignupInput = {
     type: text(raw.type), name: text(raw.name), email: text(raw.email), password: text(raw.password), org: text(raw.org),
@@ -24,7 +23,6 @@ export async function signup(raw: Record<string, unknown>): Promise<SignupErrors
   redirect(SCOUTING_ROLES.includes(role) ? "/" : "/account?welcome=1");
 }
 
-// Runs before an account exists, so as anon. app.claimable_players exposes only name, position and nationality.
 export async function findClaimable(q: string): Promise<Claimable[]> {
   const query = text(q).trim();
   if (query.length < 3) return [];

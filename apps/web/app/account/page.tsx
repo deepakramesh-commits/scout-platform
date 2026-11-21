@@ -14,7 +14,7 @@ import { ActionForm, Check, Submit } from "../forms";
 import { when } from "../page-kit";
 import { Demo, PctBadge } from "../ui";
 import { VerifiedMark } from "../verified";
-import { withdrawConsent } from "./actions";
+import { confirmAgent, withdrawConsent } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,7 @@ type Mine = {
   id: string; display_name: string; status: Status; birth_year: number | null; id_verified: boolean; is_demo: boolean; approved_at: Date | null;
   views: number | null; decision_note: string | null; decided_at: Date | null;
   consent_id: string | null; signed_at: Date | null; revoked_at: Date | null; guardian_name: string | null; guardian_contact: string | null;
+  agents: { org: string; name: string; confirmed: boolean }[];
 };
 type Claim = { id: string; status: "pending" | "approved" | "declined"; note: string; created_at: Date; decided_at: Date | null };
 type Stat = { player_id: string; competition: string; role: string; minutes: number; percentiles: Record<string, number> };
@@ -48,7 +49,9 @@ async function AccountPage(tx: Q, user: Me, inactive: boolean, welcome: boolean)
   const [mine, claims, stats, covers] = await Promise.all([
     personal ? tx<Mine[]>`
       select p.id, p.display_name, p.status, p.birth_year, p.id_verified, p.is_demo, p.approved_at, app.view_count(p.id) as views,
-             a.note as decision_note, a.decided_at, c.id as consent_id, c.signed_at, c.revoked_at, c.guardian_name, c.guardian_contact
+             a.note as decision_note, a.decided_at, c.id as consent_id, c.signed_at, c.revoked_at, c.guardian_name, c.guardian_contact,
+             coalesce((select json_agg(json_build_object('org', o.id, 'name', o.name, 'confirmed', ac.confirmed_at is not null) order by o.name)
+                       from agent_clients ac join orgs o on o.id = ac.org_id where ac.player_id = p.id), '[]') as agents
       from players p
       left join lateral (select note, decided_at from approvals where player_id = p.id order by decided_at desc limit 1) a on true
       left join lateral (select * from consents where player_id = p.id order by signed_at desc limit 1) c on true
@@ -163,6 +166,26 @@ async function AccountPage(tx: Q, user: Me, inactive: boolean, welcome: boolean)
                     <Check label="I understand and want to withdraw consent" name="confirm" />
                     <HStack><Submit label="Withdraw consent" variant="destructive" /></HStack>
                   </ActionForm>
+                </Card>
+              )}
+              {p.agents.length > 0 && (
+                <Card variant="muted" padding={4}>
+                  <VStack gap={2}>
+                    <Heading level={3}>Agents</Heading>
+                    <Text type="supporting">An agency you confirm can edit this profile's details and market facts. Confirm only the agency that represents {user.role === "guardian" ? "the player" : "you"}.</Text>
+                    {p.agents.map((a) => (
+                      <HStack key={a.org} gap={2} vAlign="center" wrap="wrap">
+                        <Text>{a.name}</Text>
+                        {a.confirmed ? <Token color="green" label="Confirmed" /> : (
+                          <ActionForm action={confirmAgent}>
+                            <input type="hidden" name="player" value={p.id} />
+                            <input type="hidden" name="org" value={a.org} />
+                            <HStack><Submit label="Confirm this agency" size="sm" variant="secondary" /></HStack>
+                          </ActionForm>
+                        )}
+                      </HStack>
+                    ))}
+                  </VStack>
                 </Card>
               )}
             </VStack>

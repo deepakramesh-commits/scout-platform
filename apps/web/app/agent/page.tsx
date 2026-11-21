@@ -14,7 +14,7 @@ import { addClient, removeClient, sendProfile } from "../workflow-actions";
 
 export const dynamic = "force-dynamic";
 
-type Client = { id: string; display_name: string; id_verified: boolean; primary_position: string | null; is_demo: boolean; added_at: Date; visible: boolean };
+type Client = { id: string; display_name: string; id_verified: boolean; primary_position: string | null; is_demo: boolean; added_at: Date; visible: boolean; confirmed: boolean };
 type Sent = { id: string; player_id: string; display_name: string | null; id_verified: boolean; club: string; message: string; created_at: Date; is_demo: boolean };
 
 export default async function Agent({ searchParams }: { searchParams: Promise<{ find?: string }> }) {
@@ -26,7 +26,8 @@ export default async function Agent({ searchParams }: { searchParams: Promise<{ 
 async function AgentPage(tx: Q, user: Me, find: string | undefined) {
   const [clients, clubs, sent] = await Promise.all([
     tx<Client[]>`
-      select p.id, p.display_name, p.id_verified, p.primary_position, a.is_demo, a.added_at, p.visible_to_scouts as visible
+      select p.id, p.display_name, p.id_verified, p.primary_position, a.is_demo, a.added_at, p.visible_to_scouts as visible,
+             a.confirmed_at is not null as confirmed
       from agent_clients a join players p on p.id = a.player_id order by p.display_name`,
     tx<{ id: string; name: string }[]>`select id, name from orgs where kind = 'club' order by name`,
     tx<Sent[]>`
@@ -61,6 +62,7 @@ async function AgentPage(tx: Q, user: Me, find: string | undefined) {
                     <TableCell>
                       <PlayerCell p={{ ...c, position: c.primary_position && ROLE_NAMES[c.primary_position] }} />
                       {!c.visible && <Text type="supporting">Not visible to clubs: awaiting approval or consent withdrawn</Text>}
+                      {!c.confirmed && <Text type="supporting">Waiting for the player to confirm your agency before you can edit his details</Text>}
                     </TableCell>
                     <TableCell><Text type="supporting">{when(c.added_at)}</Text></TableCell>
                     <TableCell>

@@ -11,6 +11,7 @@ import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting, type Q } from "@/lib/auth";
 import { matchRows } from "@/lib/competition";
+import { UUID } from "@/lib/input";
 import { fmtMetric, label } from "@/lib/metrics";
 import { MatchList } from "../../match-list";
 import { PageHead } from "../../page-kit";
@@ -22,9 +23,7 @@ export const dynamic = "force-dynamic";
 type Competition = { id: string; name: string; season: string; country: string; min_minutes: number; is_demo: boolean; covered: boolean; owner: boolean };
 type Team = { id: string; name: string; players: number };
 type Leader = { id: string; display_name: string; id_verified: boolean; value: number };
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Goals are a season total; the rest are per 90 among players over the competition's minutes threshold.
 const LEADERS = [
   { key: "goals", total: true },
   { key: "xg", total: false },

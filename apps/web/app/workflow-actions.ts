@@ -1,21 +1,16 @@
 "use server";
 
-// Club and agent workflow: shortlists, introduction requests, agent clients and profile shares.
-// Every write runs as the user; the RLS policies decide who may write what.
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
-import { db, requireMe } from "@/lib/auth";
+import { db, isDenied, requireMe } from "@/lib/auth";
+import { str, UUID } from "@/lib/input";
 
 const SHORTLIST_ROLES = ["scout", "agent", "admin"];
-const str = (form: FormData, k: string) => String(form.get(k) ?? "").trim();
 const DENIED = "You do not have access to do that for this player.";
-const isDenied = (e: unknown) => typeof e === "object" && e !== null && "code" in e && e.code === "42501";
-/** Runs a write; a row-level security refusal becomes a message instead of an error page. */
 async function ok(write: Promise<unknown>): Promise<string | void> {
   try { await write; } catch (e) { if (isDenied(e)) return DENIED; throw e; }
   refresh();
 }
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function createShortlist(form: FormData): Promise<string | void> {
   const user = await requireMe(SHORTLIST_ROLES);
@@ -43,7 +38,6 @@ export async function addToShortlist(form: FormData): Promise<string | void> {
   const [list, player] = [str(form, "list"), str(form, "player")];
   if (!UUID.test(list)) return "Choose a shortlist.";
   if (!UUID.test(player)) return "Choose a player.";
-  // Next rank in the list, so a new player lands at the bottom rather than tying with the first.
   return ok(db((tx) => tx`
     insert into shortlist_players (shortlist_id, player_id, rank)
     values (${list}, ${player}, (select coalesce(max(rank), 0) + 1 from shortlist_players where shortlist_id = ${list}))
@@ -64,7 +58,6 @@ export async function updateShortlistEntry(form: FormData): Promise<string | voi
     where shortlist_id = ${str(form, "list")} and player_id = ${str(form, "player")}`));
 }
 
-// Recorded only: the partner agency follows up outside Scout. No messaging in this build.
 export async function requestIntro(form: FormData): Promise<string | void> {
   const user = await requireMe(["scout"]);
   if (!user.org_id) return "Your account belongs to no club.";

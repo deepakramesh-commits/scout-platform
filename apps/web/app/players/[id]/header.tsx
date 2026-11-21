@@ -11,7 +11,6 @@ import { Demo, flag, PlayerAvatar } from "../../ui";
 import { VerifiedMark } from "../../verified";
 import type { Player, PlayerWithoutData } from "./player";
 
-/** Photo, name, verified mark and the facts a scout reads first; `children` holds the page's actions. */
 export function PlayerHeader({ id, p, size = 144, children }: {
   id: string; p: Player | PlayerWithoutData; size?: 96 | 144; children?: React.ReactNode;
 }) {

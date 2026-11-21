@@ -13,6 +13,13 @@ test("every user type in the brief can sign up", () => {
   }
 });
 
+test("no sign-up switches on a staff role: analyst and coordinator wait for an admin", () => {
+  for (const type of ["analyst", "coordinator"]) {
+    const r = planSignup({ ...base, type }, today);
+    assert.ok(r.ok && !r.plan.active, type);
+  }
+});
+
 test("an analyst account waits for an admin; others are active", () => {
   const a = planSignup({ ...base, type: "analyst" }, today);
   const s = planSignup({ ...base, type: "scout" }, today);

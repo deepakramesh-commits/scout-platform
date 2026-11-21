@@ -5,7 +5,6 @@ import { GROUP_ORDER, type Attribute, type AttributeGroup } from "./scouting.ts"
 
 export type GroupAverage = { group: AttributeGroup; avg: number | null; rated: { key: string; label: string; value: number }[] };
 
-/** The organisation's scout ratings averaged per attribute group, on the 1 to 10 scale the scouts use. */
 export function scoutGroupAverages(attributes: Pick<Attribute, "key" | "label" | "grp">[], evidence: Record<string, Evidence>): GroupAverage[] {
   return GROUP_ORDER.map((group) => {
     const rated = attributes.flatMap((a) => {
