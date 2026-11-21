@@ -64,3 +64,87 @@ decisions made for you. Every decision has a row in `docs/decisions.md`.
 - Known effect: a winger measured only by demo sprint tests (exactly half the weighted profile) can rank above
   real match evidence. It follows the stated rule, it carries a Demo mark, and it ends when the demo data is
   removed.
+
+## Phase 2: the scout's eye
+
+**Built.**
+- **Scout report form** (/players/[id]/report). A 1 to 10 rating for every attribute in the registry, grouped
+  technical, physical, tactical and mental, and any rating can be left empty. It also takes where the player was
+  seen, strengths, weaknesses, comments with examples, and a recommendation (sign, follow or pass). Authors can
+  edit their own reports. Reports belong to the writer's organisation, and row-level security keeps them inside
+  it.
+- **Scout view tab.** Mentality comes first, with its own chart showing one dot per report plus the average. Each
+  report follows, then the average per attribute.
+- **Numbers beside the eye.** The match percentile and the scouts' average (rating x 10) sit side by side, and a
+  gap of 25 points or more is named in words.
+- **Fit.** It now counts scout ratings. Seko Fofana's fit for the scout's club went from 32 to 51 once ratings
+  counted, and both numbers were checked by hand (226/7 and 609/12).
+- **Demo reports.** The seed writes 87 of them on 60 players, from two clubs. Their ratings follow the real match
+  evidence with noise, so agreement and disagreement both show up.
+
+**Checks.**
+- The gate ran deslop, no-comments, verify, qa, design-review, thermos and review together with phase 3. The
+  results are under phase 3.
+- Isolation: scout2 (another club) sees "No reports yet" where the first club sees its reports, and gets a 404 on
+  their edit URLs.
+
+**Not measurable yet.** Every scout rating in the database is demo until real scouts write reports.
+
+**Decisions made for you.**
+- A report needs where the player was seen, a recommendation, and at least one rating or some text.
+- The disagreement threshold is 25 points.
+
+## Phase 3: risk and market
+
+**Built.**
+- **Worker.** A per-match index for every player and match of 30 minutes or more, with the stronger and weaker
+  opponent split. Percentiles by age band (U17, U19, U21 and senior). xT through socceraction, read from our own
+  StatsBomb-style export.
+- **Exporter.** It writes the open-data layout, and a round trip through both socceraction and kloppy proves
+  outside tools can read it.
+- **Risk block.** Six lines with a status and a plain reason: stronger opponents, consistency, roles played,
+  sample size, documented age and whether a transfer is realistic.
+- **Per-match strip.** One cell per match, with the stronger and weaker split and a two-sentence explanation of
+  the index.
+- **Market details and physical tests.** Each has an edit form. Preferred foot and weaker-foot share are also
+  derived from event data and shown beside the entered foot. Tests are marked verified or not, and only an admin
+  or the owning federation can verify one.
+- **Age bands and age curve.** Percentiles by age band, and an age curve for the player's position.
+
+**Checks.**
+- The gate for phases 2 and 3 passed: pytest 34, `npm test` 93, tsc clean, `npm run build` passing, and
+  `astryx doctor` 0 failures.
+- Numbers checked by hand:
+  - Kessié: crossing 67 by match data against 10 from the scouts, a match index of 61 ± 26, an average of 60
+    against stronger sides and 67 against weaker, and 22% weaker foot.
+  - Fofana's index and foot counts.
+  - A 4.05 s 30 m sprint ranking 88th.
+- Fixed from review:
+  - Saving the market form wrongly cleared the demo mark on untouched values.
+  - The risk block counted unpublished matches.
+  - xT had no age-band percentile.
+  - Two players could share a StatsBomb id without anyone noticing.
+  - A federation could act on any live player.
+  - Test percentiles changed with the viewer.
+  - Two RLS holes, found while reviewing the market form: an owner could approve his own under-18 profile, and a
+    consent could be rewritten. Column-level grants close both, and RLS tests cover them.
+
+**Not measurable yet.**
+- Age bands run on demo birth years, and only 5 qualified players fall in U19 or U21, so most bands have too few
+  peers. The screens say so.
+- There is no outside league-strength rating, so "stronger opponent" compares goal difference per match within the
+  competition.
+- Possession value is xT only. VAEP needs far more matches than one tournament.
+
+**Weak stand-ins.**
+- **The per-match index.** It weighs all 29 counting measures equally. It is a consistency signal, not a rating.
+- **Stronger opponents.** In a tournament most teams play three to seven matches, so the split often rests on one
+  or two matches. When either side has fewer than 2, the risk line says "unknown".
+
+**Decisions made for you.**
+- Risk thresholds: a drop of more than 10 index points or a spread above 20 is a caution, and so is a single role
+  played.
+- Preferred foot from match data needs at least 30 foot touches, and a weaker-foot share of 40% or more reads as
+  both feet.
+- Physical test values outside plausible ranges are refused.
+- Demo market values start blank in the edit form.
