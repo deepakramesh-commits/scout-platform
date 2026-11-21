@@ -165,3 +165,40 @@ def test_an_agent_edits_his_clients_details_but_not_their_status(cur):
     assert cur.rowcount == 1
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         cur.execute("update players set id_verified = true where id = %s", (client,))
+
+
+def test_a_federation_verifies_only_players_in_its_own_competitions(cur):
+    outsider = uuid.uuid4()
+    cur.execute("insert into players (id, display_name) values (%s, 'Outside player')", (outsider,))
+    act_as(cur, "federation")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("insert into physical_tests (player_id, test, value, unit, tested_at, verified) "
+                    "values (%s, 'sprint_30m', 4.1, 's', current_date, true)", (outsider,))
+
+
+def test_test_percentiles_do_not_depend_on_who_is_looking(cur):
+    pid = one(cur, "select t.player_id from physical_tests t join players p on p.id = t.player_id "
+                   "where t.test = 'sprint_30m' and p.status = 'live' and p.claimed_by is null limit 1")
+    act_as(cur, "scout")
+    as_scout = one(cur, "select pct from app.test_percentiles(%s) where test = 'sprint_30m'", [pid])
+    act_as(cur, "admin")
+    as_admin = one(cur, "select pct from app.test_percentiles(%s) where test = 'sprint_30m'", [pid])
+    assert as_scout == as_admin is not None
+    act_as(cur, "player")
+    assert one(cur, "select count(*) from app.test_percentiles(%s)", [pid]) == 0
+
+
+def test_an_admin_approves_a_profile_claim_and_it_links(cur):
+    pid = one(cur, "select id from players where origin = 'match_data' and claimed_by is null limit 1")
+    cur.execute("insert into profile_claims (id, player_id, user_id) values (gen_random_uuid(), %s, %s) returning id", (pid, did("user", "player")))
+    claim = cur.fetchone()[0]
+    act_as(cur, "player")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("select app.decide_claim(%s, 'approved', 'self')", (claim,))
+    cur.connection.rollback()
+    cur.execute("insert into profile_claims (id, player_id, user_id) values (%s, %s, %s)", (claim, pid, did("user", "player")))
+    act_as(cur, "admin")
+    cur.execute("select app.decide_claim(%s, 'approved', 'Matched passport to federation record')", (claim,))
+    cur.execute("reset role")
+    assert one(cur, "select claimed_by from players where id = %s", pid) == did("user", "player")
+    assert one(cur, "select note from profile_claims where id = %s", claim) == "Matched passport to federation record"

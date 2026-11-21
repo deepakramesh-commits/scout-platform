@@ -44,15 +44,8 @@ export const getProfiles = (q: Q) =>
     group by r.id
     order by r.created_at, r.id`;
 
-const rankedTests = (q: Q) => q`
-  latest as (
-    select distinct on (player_id, test) player_id, test, value, unit, tested_at, verified, is_demo
-    from physical_tests order by player_id, test, tested_at desc
-  ), ranked as (
-    select l.*, k.label, round(100 * cume_dist() over (
-             partition by l.test order by case when k.lower_is_better then -l.value else l.value end))::int as pct
-    from latest l join physical_test_kinds k on k.key = l.test
-  )`;
+// Ranked among every player's latest test of the kind, whoever is looking (app.test_percentiles is security definer).
+const rankedTests = (q: Q, ids: string[]) => q`ranked as (select * from app.test_percentiles(${ids}::uuid[]))`;
 
 export type TestResult = {
   test: string; label: string; value: number; unit: string; tested_at: Date; verified: boolean; is_demo: boolean; pct: number;
@@ -60,9 +53,9 @@ export type TestResult = {
 
 export const getTests = (q: Q, playerId: string) =>
   q<TestResult[]>`
-    with ${rankedTests(q)}
+    with ${rankedTests(q, [playerId])}
     select test, label, value::float8 as value, unit, tested_at, verified, is_demo, pct
-    from ranked where player_id = ${playerId} order by label`;
+    from ranked order by label`;
 
 export async function getEvidence(q: Q, playerIds: string[]): Promise<Map<string, PlayerEvidence>> {
   const out = new Map<string, PlayerEvidence>(playerIds.map((id) => [id, { evidence: {}, demo: new Set() }]));
@@ -73,10 +66,9 @@ export async function getEvidence(q: Q, playerIds: string[]): Promise<Map<string
       from player_season_metrics where player_id = any(${playerIds}::uuid[])
       order by player_id, minutes desc`,
     q<{ player_id: string; attribute: string; pct: number; is_demo: boolean }[]>`
-      with ${rankedTests(q)}
+      with ${rankedTests(q, playerIds)}
       select r.player_id, a.key as attribute, r.pct, r.is_demo
-      from ranked r join attributes a on a.test = r.test
-      where r.player_id = any(${playerIds}::uuid[])`,
+      from ranked r join attributes a on a.test = r.test`,
     q<{ player_id: string; attribute: string; scout: number; is_demo: boolean }[]>`
       select r.player_id, s.attribute, round(avg(s.rating) * 10)::int as scout, bool_or(r.is_demo) as is_demo
       from scout_ratings s join scout_reports r on r.id = s.report_id

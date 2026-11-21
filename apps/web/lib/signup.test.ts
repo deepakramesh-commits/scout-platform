@@ -50,3 +50,16 @@ test("age counts the birthday", () => {
   assert.equal(ageOn("2008-11-21", today), 18);
   assert.equal(ageOn("2008-11-22", today), 17);
 });
+
+test("a player or guardian can claim a profile from match data instead of creating one", () => {
+  const id = "3b4fefd4-551f-53a9-8b7f-86f78239a376";
+  const claim = planSignup({ ...base, type: "player", dateOfBirth: "2001-05-02", consent: true, claimPlayerId: id }, today);
+  assert.ok(claim.ok);
+  assert.equal(claim.plan.claimPlayerId, id);
+  const fresh = planSignup({ ...base, type: "player", dateOfBirth: "2001-05-02", consent: true }, today);
+  assert.ok(fresh.ok && fresh.plan.claimPlayerId === null);
+  const bad = planSignup({ ...base, type: "player", dateOfBirth: "2001-05-02", consent: true, claimPlayerId: "x" }, today);
+  assert.ok(!bad.ok && bad.errors.claimPlayerId);
+  const scout = planSignup({ ...base, type: "scout", claimPlayerId: id }, today);
+  assert.ok(!scout.ok && scout.errors.claimPlayerId);
+});

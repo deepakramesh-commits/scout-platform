@@ -3,6 +3,7 @@ import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "./motion.css";
 import { db, me } from "@/lib/auth";
+import { SCOUTING_ROLES } from "@/lib/nav";
 import { Shell } from "./shell";
 
 export const metadata: Metadata = { title: "Scout · African football talent" };
@@ -26,7 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..800&display=swap" />
       </head>
       <body>
-        <Shell subheading={user ? names ?? "No competitions in your plan yet" : ""} user={user && { name: user.display_name ?? user.email ?? "", role: user.role, org: user.org_name }}>{children}</Shell>
+        <Shell subheading={user && SCOUTING_ROLES.includes(user.role) ? names ?? "No competitions in your plan yet" : ""} user={user && { name: user.display_name ?? user.email ?? "", role: user.role, org: user.org_name }}>{children}</Shell>
       </body>
     </html>
   );

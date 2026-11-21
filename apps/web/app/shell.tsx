@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { LinkProvider } from "@astryxdesign/core/Link";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { Theme } from "@astryxdesign/core/theme";
 import { TopNav, TopNavHeading, TopNavItem } from "@astryxdesign/core/TopNav";
 import { defaultThemeSlug, themes } from "../astryx-themes";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Text } from "@astryxdesign/core/Text";
 import { navFor, selected } from "@/lib/nav";
 import { AnchorFallback } from "./anchor-fallback";
 
@@ -30,6 +30,8 @@ export function Shell({ children, subheading, user }: { children: React.ReactNod
   const path = usePathname();
   const items = navFor(user?.role);
   const current = selected(items, path);
+  // A phone has no room for the name and organisation beside the menu; the account page shows both.
+  const wide = useMediaQuery("(min-width: 48rem)");
   return (
     <Theme theme={themes[defaultThemeSlug]} mode="dark">
       <AnchorFallback />
@@ -44,7 +46,7 @@ export function Shell({ children, subheading, user }: { children: React.ReactNod
               startContent={items.length ? <>{items.map((i) => <TopNavItem key={i.href} label={i.label} href={i.href} isSelected={current === i.href} />)}</> : undefined}
               endContent={user ? (
                 <HStack gap={2} vAlign="center">
-                  <Text type="supporting" color="secondary" maxLines={1}>{user.name}{user.org ? ` · ${user.org}` : ""}</Text>
+                  <Button size="sm" variant="ghost" href="/account" label={wide ? `${user.name}${user.org ? ` · ${user.org}` : ""}` : "Account"} />
                   <form action="/logout" method="post"><Button type="submit" size="sm" variant="ghost" label="Sign out" /></form>
                 </HStack>
               ) : (

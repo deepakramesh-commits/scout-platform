@@ -83,6 +83,7 @@ export async function signIn(email: string, password: string): Promise<string | 
 }
 
 export type SignupOutcome = { ok: true } | { ok: false; errors: Record<string, string> };
+class ClaimTaken extends Error {}
 
 /** Creates the login, the organisation, and for players the profile, identity and consent, in one transaction. */
 export async function signUp(input: SignupInput): Promise<SignupOutcome> {
@@ -106,19 +107,30 @@ export async function signUp(input: SignupInput): Promise<SignupOutcome> {
              values (${user.id}, ${orgId}, ${plan.role}, ${input.name.trim()}, ${email}, ${plan.active})`;
     if (plan.player) {
       const isPlayer = plan.type === "player";
-      // The age trigger sets pending_approval for an under-18 birth year; adults are live on consent.
-      const [player] = await tx<{ id: string }[]>`
-        insert into players (display_name, birth_year, nationality, primary_position, origin, claimed_by, guardian_id)
-        values (${plan.player.name}, ${plan.player.birthYear}, ${input.nationality?.trim() || null}, ${input.position || null}, 'sign_up',
-                ${isPlayer ? user.id : null}, ${isPlayer ? null : user.id})
-        returning id`;
-      await tx`insert into player_identity (player_id, legal_name, date_of_birth) values (${player.id}, ${plan.player.name}, ${plan.player.dateOfBirth})`;
+      const guardianName = isPlayer ? input.guardianName?.trim() || null : input.name.trim();
+      let playerId = plan.claimPlayerId;
+      if (playerId) {
+        // Claiming a profile built from match data: an admin links it after checking (app.decide_claim).
+        const [open] = await tx`select 1 from players where id = ${playerId} and origin = 'match_data' and claimed_by is null`;
+        if (!open) throw new ClaimTaken();
+        await tx`insert into profile_claims (player_id, user_id) values (${playerId}, ${user.id})`;
+      } else {
+        // Under 18 waits for an admin. Set here because the age trigger counts birth years and would let a 17-year-old born
+        // late in the year through as 18.
+        const [player] = await tx<{ id: string }[]>`
+          insert into players (display_name, birth_year, nationality, primary_position, origin, claimed_by, guardian_id, status)
+          values (${plan.player.name}, ${plan.player.birthYear}, ${input.nationality?.trim() || null}, ${input.position || null}, 'sign_up',
+                  ${isPlayer ? user.id : null}, ${isPlayer ? null : user.id}, ${plan.player.underEighteen ? "pending_approval" : "live"})
+          returning id`;
+        playerId = player.id;
+        await tx`insert into player_identity (player_id, legal_name, date_of_birth) values (${playerId}, ${plan.player.name}, ${plan.player.dateOfBirth})`;
+      }
       await tx`insert into consents (player_id, signed_by, scope, guardian_name, guardian_contact)
-               values (${player.id}, ${user.id}, '{share_with_clubs}', ${isPlayer ? input.guardianName?.trim() || null : input.name.trim()},
-                       ${input.guardianContact?.trim() || null})`;
+               values (${playerId}, ${user.id}, '{share_with_clubs}', ${guardianName}, ${input.guardianContact?.trim() || null})`;
     }
     return user.id;
-  });
+  }).catch((e: unknown) => { if (e instanceof ClaimTaken) return e; throw e; });
+  if (userId instanceof ClaimTaken) return { ok: false, errors: { claimPlayerId: "That profile has just been claimed. Choose another, or create a new profile." } };
   await startSession(userId);
   return { ok: true };
 }

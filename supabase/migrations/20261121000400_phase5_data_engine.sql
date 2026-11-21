@@ -198,3 +198,54 @@ alter table matches add column periods jsonb not null default '[]';
 alter table competitions add column is_demo boolean not null default false;
 alter table teams add column is_demo boolean not null default false;
 alter table matches add column is_demo boolean not null default false;
+
+-- (Here, not in phase 4, because it reads squad_members.)
+-- A federation checks only players of the competitions it owns: in their line-ups or squads.
+create function app.federation_players() returns setof uuid language sql stable security definer set search_path = public as $$
+  select l.player_id from lineups l join matches m on m.id = l.match_id
+    join org_coverage c on c.competition_id = m.competition_id and c.owner and c.org_id = app.org()
+  where app.role() = 'federation'
+  union
+  select s.player_id from squad_members s join matches m on s.team_id in (m.home_team_id, m.away_team_id)
+    join org_coverage c on c.competition_id = m.competition_id and c.owner and c.org_id = app.org()
+  where app.role() = 'federation' $$;
+grant execute on function app.federation_players() to authenticated;
+
+drop policy verify_only on player_identity;
+drop policy verify_write on player_identity;
+drop policy write on verifications;
+drop policy add on physical_tests;
+drop policy verify on physical_tests;
+create policy verify_only on player_identity for select to authenticated
+  using ((select app.is_admin()) or player_id in (select app.federation_players()) or app.owns_player(player_id));
+create policy verify_write on player_identity for all to authenticated
+  using ((select app.is_admin()) or player_id in (select app.federation_players()))
+  with check ((select app.is_admin()) or player_id in (select app.federation_players()));
+create policy write on verifications for all to authenticated
+  using ((select app.is_admin()) or player_id in (select app.federation_players()))
+  with check ((select app.is_admin()) or player_id in (select app.federation_players()));
+create policy add on physical_tests for insert to authenticated
+  with check ((app.owns_player(player_id) and not verified) or (select app.is_admin()) or player_id in (select app.federation_players()));
+create policy verify on physical_tests for update to authenticated
+  using ((select app.is_admin()) or player_id in (select app.federation_players()))
+  with check ((select app.is_admin()) or player_id in (select app.federation_players()));
+
+-- Two tests on one day keep the order they were entered.
+alter table physical_tests add column created_at timestamptz not null default now();
+
+-- Percentiles rank a player's latest test among every player's latest test of that kind, whoever is looking;
+-- only the rows of players the caller may see come back.
+create function app.test_percentiles(pids uuid[]) returns table (
+  player_id uuid, test text, label text, value numeric, unit text, tested_at date, verified boolean, is_demo boolean, pct int)
+language sql stable security definer set search_path = public as $$
+  with latest as (
+    select distinct on (t.player_id, t.test) t.player_id, t.test, t.value, t.unit, t.tested_at, t.verified, t.is_demo
+    from physical_tests t order by t.player_id, t.test, t.tested_at desc, t.created_at desc
+  ), ranked as (
+    select l.*, k.label, round(100 * cume_dist() over (
+             partition by l.test order by case when k.lower_is_better then -l.value else l.value end))::int as pct
+    from latest l join physical_test_kinds k on k.key = l.test
+  )
+  select player_id, test, label, value, unit, tested_at, verified, is_demo, pct from ranked
+  where player_id = any(pids) and player_id in (select app.visible_players()) $$;
+grant execute on function app.test_percentiles(uuid[]) to authenticated;

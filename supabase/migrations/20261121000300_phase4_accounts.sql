@@ -369,7 +369,7 @@ declare c profile_claims;
 begin
   if not app.is_admin() then raise exception 'only an admin decides a claim' using errcode = '42501'; end if;
   if decision not in ('approved', 'declined') then raise exception 'bad decision'; end if;
-  update profile_claims set status = decision, note = coalesce(note, ''), decided_by = auth.uid(), decided_at = now()
+  update profile_claims set status = decision, note = coalesce(decide_claim.note, ''), decided_by = auth.uid(), decided_at = now()
   where id = cid and status = 'pending' returning * into c;
   if c.id is null then raise exception 'no pending claim %', cid; end if;
   if decision = 'approved' then
@@ -387,8 +387,6 @@ language sql stable security definer set search_path = public as $$
   order by display_name limit 20 $$;
 grant execute on function app.claimable_players(text) to authenticated;
 
--- Column-level grants: people edit descriptive fields only. Status, approval, verification and ownership change
--- through the app.* functions and triggers above, so an owner cannot approve his own under-18 profile.
 revoke update on players from authenticated;
 grant update (height_cm, preferred_foot, nationality, primary_position, demo_fields, photo_url, photo_credit, photo_source_url)
   on players to authenticated;
@@ -396,9 +394,7 @@ drop policy owner_edit on players;
 create policy owner_edit on players for update to authenticated
   using (app.owns_player(id) or app.is_admin() or id in (select player_id from agent_clients where org_id = (select app.org())))
   with check (app.owns_player(id) or app.is_admin() or id in (select player_id from agent_clients where org_id = (select app.org())));
--- Consent is withdrawn, never rewritten.
 revoke update on consents from authenticated;
 grant update (revoked_at) on consents to authenticated;
--- The agency moves a request along; it cannot change who asked or what was asked.
 revoke update on intro_requests from authenticated;
 grant update (status) on intro_requests to authenticated;

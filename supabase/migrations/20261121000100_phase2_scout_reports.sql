@@ -1,4 +1,3 @@
--- Phase 2: the scout's eye. Ratings 1..10 per registry attribute; the mental group is the personal profile.
 create table scout_reports (
   id uuid primary key default gen_random_uuid(),
   player_id uuid not null references players on delete cascade,
