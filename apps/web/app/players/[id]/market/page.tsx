@@ -43,11 +43,11 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
   if (!p) notFound();
 
   const back = `/players/${id}?tab=market`;
-  const initial: MarketInput = {
-    heightCm: p.heightCm, preferredFoot: p.preferredFoot, contractEnd: p.contractEnd, availability: p.availability,
-    transferConditions: p.transferConditions, representative: p.representative,
-  };
-  const demoNote = p.market_demo || p.demo_fields.some((f) => f === "height_cm" || f === "preferred_foot");
+  const market = p.market_demo
+    ? { contractEnd: null, availability: null, transferConditions: null, representative: null }
+    : { contractEnd: p.contractEnd, availability: p.availability, transferConditions: p.transferConditions, representative: p.representative };
+  const initial: MarketInput = { heightCm: p.heightCm, preferredFoot: p.preferredFoot, ...market };
+  const demoNote = p.demo_fields.some((f) => f === "height_cm" || f === "preferred_foot");
 
   return (
     <VStack gap={6}>
@@ -63,7 +63,8 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
               <Heading level={2}>Market details</Heading>
               {(can.market || can.player) && (
                 <Text type="supporting">
-                  {demoNote ? "Some of these values are demo data. Saving marks what you enter as real, so the Demo label goes. " : ""}
+                  {p.market_demo && can.market ? "His contract and availability are demo data, so the fields start empty: saving replaces the demo values with what you enter. " : ""}
+                  {demoNote && can.player ? "A demo height or foot stays marked Demo until you change it. " : ""}
                   {!can.player && "Height and preferred foot are changed by the player, his academy or an admin. "}
                   {!can.market && "Contract and availability are changed by the player, his academy, his agent or an admin."}
                 </Text>

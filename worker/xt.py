@@ -17,7 +17,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 def competition_xt(cur, comp_id) -> pd.DataFrame:
-    """match_id, player_id (our uuids), value = summed xT of the player's successful moves in that match."""
     import socceraction.spadl as spadl
     from socceraction.data.statsbomb import StatsBombLoader
     from socceraction.xthreat import ExpectedThreat
@@ -39,7 +38,9 @@ def competition_xt(cur, comp_id) -> pd.DataFrame:
     rated = actions.dropna(subset=["value"])
 
     cur.execute("select id from players")
-    players = {sid(p): p for (p,) in cur.fetchall()}
+    rows = cur.fetchall()
+    players = {sid(p): p for (p,) in rows}
+    assert len(players) == len(rows), "two players share a 31-bit StatsBomb id"
     cur.execute("select id from matches where competition_id = %s", (comp_id,))
     match_ids = {sid(m): m for (m,) in cur.fetchall()}
     out = rated.groupby(["game_id", "player_id"])["value"].sum().reset_index()

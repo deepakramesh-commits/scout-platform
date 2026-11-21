@@ -201,7 +201,7 @@ def age_band(age):
 def band_percentiles(res: pd.DataFrame, birth_years: dict, year: int) -> pd.DataFrame:
     bands = res["player_id"].map(lambda p: age_band(year - birth_years[p]) if birth_years.get(p) else None)
     q = res["style"].notna() & bands.notna()
-    per90 = pd.DataFrame(list(res["per90"]), index=res.index)[KEYS].astype(float)
+    per90 = pd.DataFrame(list(res["per90"]), index=res.index).astype(float)
     groups = [res["role"][q], bands[q]]
     pct = (per90[q].groupby(groups).rank(pct=True) * 100).round()
     peers = res[q].groupby(groups)["player_id"].transform("count")

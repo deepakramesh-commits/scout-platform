@@ -9,7 +9,6 @@ export type AgePoint = { age: number; value: number; name: string };
 
 const axis = { fill: "var(--color-text-secondary)", fontSize: 12 };
 
-// Recharts' own tween is off, as on the compare radar, so marks appear at once and reduced motion needs nothing.
 export function AgeCurve({ others, me }: { others: AgePoint[]; me: AgePoint | null }) {
   return (
     <ResponsiveContainer width="100%" aspect={1.6} maxHeight={360}>
@@ -29,8 +28,8 @@ export function AgeCurve({ others, me }: { others: AgePoint[]; me: AgePoint | nu
             </Card>
           ) : null;
         }} />
-        <ZAxis zAxisId="other" range={[50, 50]} />
-        <ZAxis zAxisId="me" range={[220, 220]} />
+        <ZAxis zAxisId="other" dataKey="value" range={[50, 50]} />
+        <ZAxis zAxisId="me" dataKey="value" range={[220, 220]} />
         <Scatter zAxisId="other" data={others} fill="var(--color-data-gray-3)" fillOpacity={0.7} isAnimationActive={false} />
         {me && <Scatter zAxisId="me" data={[me]} fill="var(--color-data-orange-4)" stroke="var(--color-background-surface)" strokeWidth={2} shape="diamond"
           isAnimationActive={false}>

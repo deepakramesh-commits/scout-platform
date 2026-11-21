@@ -1,4 +1,3 @@
--- Phase 3: risk and market. Per-match index, age-band percentiles, starters for the StatsBomb export.
 alter table lineups add column started boolean not null default false;
 
 create table player_match_index (

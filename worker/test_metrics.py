@@ -184,6 +184,16 @@ def test_value_metric_is_per90_by_role_and_ranked():
     assert out.loc["b", "percentiles"]["xt"] == 100 and out.loc["a", "percentiles"]["xt"] == 50
 
 
+def test_a_value_metric_is_ranked_within_the_age_band_too():
+    from metrics import add_value_metric, band_percentiles
+    lu = lineups([("a", "CM", 90), ("b", "CM", 45)])
+    res = compute_season_metrics(pd.DataFrame([ev("a", "pass"), ev("b", "pass")]), lu, 0)
+    per_match = pd.DataFrame([{"match_id": "m1", "player_id": "a", "value": 0.2}, {"match_id": "m1", "player_id": "b", "value": 0.2}])
+    res = add_value_metric(res, lu, per_match, "xt")
+    bands = band_percentiles(res, {"a": 2007, "b": 2007}, 2026).set_index(res["player_id"])
+    assert bands.loc["b", "band_percentiles"]["xt"] == 100 and bands.loc["a", "band_percentiles"]["xt"] == 50
+
+
 def test_a_measure_most_of_the_position_never_records_gives_no_attribute_evidence():
     from metrics import attribute_percentiles
     out = pd.DataFrame([

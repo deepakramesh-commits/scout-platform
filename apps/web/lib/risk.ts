@@ -14,9 +14,7 @@ export type RiskInput = {
   today: Date;
 };
 
-// A drop of more than this many index points against stronger sides is a caution.
 export const STRONGER_DROP = 10;
-// A standard deviation of the 0-100 match index above this is a caution (an even spread would be about 29).
 export const SPREAD_MAX = 20;
 export const MIN_MATCHES = 3;
 
@@ -97,9 +95,7 @@ export function assessRisk(i: RiskInput): RiskItem[] {
   ];
 }
 
-// Under this many foot touches (passes and shots) the match data does not name a foot.
 export const FOOT_MIN_TOUCHES = 30;
-// The weaker foot at this share or more of touches counts as two-footed.
 export const BOTH_FEET_SHARE = 40;
 
 export type MatchFoot = { foot: Foot; weakShare: number; touches: number };

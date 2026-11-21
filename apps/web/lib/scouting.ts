@@ -77,11 +77,10 @@ export async function getEvidence(q: Q, playerIds: string[]): Promise<Map<string
       select r.player_id, a.key as attribute, r.pct, r.is_demo
       from ranked r join attributes a on a.test = r.test
       where r.player_id = any(${playerIds}::uuid[])`,
-    // RLS limits reports to the viewer's organisation, so each club's fit counts only its own scouts.
     q<{ player_id: string; attribute: string; scout: number; is_demo: boolean }[]>`
       select r.player_id, s.attribute, round(avg(s.rating) * 10)::int as scout, bool_or(r.is_demo) as is_demo
       from scout_ratings s join scout_reports r on r.id = s.report_id
-      where r.player_id = any(${playerIds}::uuid[])
+      where r.player_id = any(${playerIds}::uuid[]) and r.org_id = app.org()
       group by r.player_id, s.attribute`,
   ]);
   for (const m of main) {
@@ -107,7 +106,6 @@ export type ScoutReport = {
   ratings: Record<string, number>;
 };
 
-/** Every report on the player the viewer's organisation may read (RLS), newest first. */
 export const getReports = (q: Q, playerId: string) =>
   q<ScoutReport[]>`
     select r.id, r.author_id, u.display_name as author, r.created_at, r.updated_at, r.seen_in, r.recommendation,
@@ -119,7 +117,6 @@ export const getReports = (q: Q, playerId: string) =>
 
 export type EditRights = { market: boolean; player: boolean; addTest: boolean; verifyTest: boolean };
 
-/** What the viewer may change on this player, read from the same rules the RLS policies apply. */
 export async function getEditRights(q: Q, playerId: string): Promise<EditRights> {
   const [r] = await q<{ admin: boolean; owner: boolean; agent: boolean; federation: boolean }[]>`
     select app.is_admin() as admin, app.owns_player(${playerId}) as owner,

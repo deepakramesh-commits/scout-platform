@@ -1,10 +1,4 @@
-"""Write matches as StatsBomb-style JSON in the open-data folder layout, so kloppy and socceraction read them unchanged.
-
-    uv run --python 3.12 python export_statsbomb.py --out exports/ [--competition-id <uuid>] [--match-id <uuid>]
-
-Layout: competitions.json, matches/<competition>/<season>.json, events/<match>.json, lineups/<match>.json.
-Our ids are uuids; StatsBomb's are integers, so each uuid maps to a stable 31-bit integer (`sid`).
-"""
+"""Our ids are uuids; StatsBomb's are integers, so each uuid maps to a stable 31-bit integer (`sid`)."""
 import argparse
 import json
 import os
@@ -15,7 +9,6 @@ from collections import Counter
 import psycopg
 
 DEFAULT_DB = "postgres://postgres:postgres@localhost:54330/postgres"
-# Official StatsBomb id for every name the open data uses, harvested from the raw open data.
 IDS = json.loads(pathlib.Path(__file__).with_name("statsbomb_ids.json").read_text())
 TYPES = {
     "pass": "Pass", "carry": "Carry", "shot": "Shot", "dribble": "Dribble", "duel": "Duel", "tackle": "Duel",
@@ -43,7 +36,6 @@ def sid(u) -> int:
 
 
 def named(path: str, value: str) -> dict:
-    """{"id", "name"} for a stored slug or name, using StatsBomb's spelling and id."""
     wanted = value.replace("_", " ").lower()
     # body parts and outcomes share ids across event types, so a sibling table can answer
     suffix = "." + path.split(".")[-1]
@@ -138,7 +130,7 @@ def build_match(match: dict, lineups: list[dict], events: list[dict]) -> tuple[l
                  "position": dict(zip(("id", "name"), ROLE_POSITION.get(l["position"], (0, "Substitute")))),
                  "jersey_number": l["shirt_number"] or 0} for l in starters]})
     possession, holder = 1, match["home_team_id"]
-    aerial_won: set = set()  # players whose next action carries the aerial-won flag
+    pending_aerial_winners: set = set()
     for p in periods:
         in_period = [e for e in events if e["period"] == p]
         for tid in teams:
@@ -147,10 +139,10 @@ def build_match(match: dict, lineups: list[dict], events: list[dict]) -> tuple[l
         for e in in_period:
             if e["type"] == "duel" and (e["extra"] or {}).get("duel_type") == "aerial":
                 # StatsBomb has no "aerial won" event: it is a flag on the winner's next action
-                aerial_won.add(e["player_id"])
+                pending_aerial_winners.add(e["player_id"])
                 continue
-            if e["player_id"] in aerial_won and e["type"] in ("pass", "clearance", "shot", "miscontrol"):
-                aerial_won.discard(e["player_id"])
+            if e["player_id"] in pending_aerial_winners and e["type"] in ("pass", "clearance", "shot", "miscontrol"):
+                pending_aerial_winners.discard(e["player_id"])
                 e = {**e, "extra": {**(e["extra"] or {}), "aerial_won": True}}
             if e["type"] in ON_BALL and e["team_id"] != holder:
                 possession, holder = possession + 1, e["team_id"]

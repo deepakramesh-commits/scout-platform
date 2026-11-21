@@ -17,7 +17,6 @@ export type MarketInput = {
 export type MarketField = keyof MarketInput;
 export type ParsedMarket = { ok: true; value: MarketInput } | { ok: false; errors: Partial<Record<MarketField, string>> };
 
-// Plausible bounds per test, so a typo (seconds for tenths, cm for m) is caught before it ranks anyone.
 export const TEST_RANGE: Record<string, { min: number; max: number; unit: string; name: string }> = {
   sprint_10m: { min: 1, max: 4, unit: "s", name: "A 10 m sprint" },
   sprint_30m: { min: 3, max: 8, unit: "s", name: "A 30 m sprint" },
@@ -32,7 +31,6 @@ export type ParsedTest = { ok: true; value: TestInput } | { ok: false; errors: P
 const text = (v: FormDataEntryValue | null) => (typeof v === "string" ? v.trim() : "");
 const oneOf = <T extends string>(list: readonly T[], v: string): v is T => (list as readonly string[]).includes(v);
 
-/** A real calendar date as YYYY-MM-DD, or null. */
 function isoDate(s: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const d = new Date(`${s}T00:00:00Z`);

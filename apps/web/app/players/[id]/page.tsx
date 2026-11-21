@@ -29,12 +29,10 @@ import { SectionTabs } from "./tabs";
 
 export const dynamic = "force-dynamic";
 
-type Player = {
-  display_name: string; photo_url: string | null; photo_credit: string | null; photo_source_url: string | null;
-  team: string | null; role: string; minutes: number; matches: number; peers: number; has_style: boolean;
-  per90: Record<string, number | null>; percentiles: Record<string, number>; attr_percentiles: Record<string, number>;
-  birth_year: number | null; height_cm: number | null; preferred_foot: string | null; nationality: string | null; demo_fields: string[];
-} & MarketPlayer;
+type Player = MarketPlayer & {
+  photo_url: string | null; photo_credit: string | null; photo_source_url: string | null; team: string | null; has_style: boolean;
+  per90: Record<string, number | null>; attr_percentiles: Record<string, number>;
+};
 type Similar = { id: string; display_name: string; photo_url: string | null; team: string | null; similarity: number };
 type Ev = { type: string; x: number; y: number; end_x: number | null; end_y: number | null; xg: number | null };
 
@@ -48,6 +46,7 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number]["value"];
 const isSection = (v: unknown): v is Section => SECTIONS.some((s) => s.value === v);
 
+const GROUP_PAUSE_SLOTS = 3;
 const styleMatch = (cosine: number) => Math.round(((1 + cosine) / 2) * 100);
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
@@ -106,7 +105,7 @@ export default async function PlayerPage({ params, searchParams }: {
                 <HStack gap={3} wrap="wrap" vAlign="center">
                   <Text color="secondary">{flag(p.team)} {p.team}</Text>
                   <Token label={ROLE_NAMES[p.role] ?? p.role} color="green" />
-                  <Text color="secondary">{p.matches} matches · {p.minutes} minutes</Text>
+                  <Text color="secondary">{p.matches} {p.matches === 1 ? "match" : "matches"} · {p.minutes} minutes</Text>
                   <HStack gap={1} vAlign="center">
                     <Text color="secondary">{p.birth_year == null ? "Age not recorded" : `Age ${SEASON_YEAR - p.birth_year}`}</Text>
                     {p.birth_year != null && ageDemo && <Demo />}
@@ -180,17 +179,16 @@ async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; 
           <VStack gap={3}>
             <Heading level={3}>Percentiles vs {p.peers} {plural}</Heading>
             {grouped(keys).map(([g, ks], gi, all) => {
-              // Stagger slot: row order, plus a 3-slot (120ms) pause before each new group.
-              const before = all.slice(0, gi).reduce((n, [, prev]) => n + prev.length, 0) + gi * 3;
+              const firstSlot = all.slice(0, gi).reduce((n, [, prev]) => n + prev.length, 0) + gi * GROUP_PAUSE_SLOTS;
               return (
                 <VStack key={g} gap={1}>
                   <Text type="label" color="secondary">{g}</Text>
                   {ks.map((k, ri) => (
                     <Grid key={k} className="mrow" gap={2}>
                       <Text maxLines={1}>{metricLabel(k)}</Text>
-                      <PctBar pct={p.percentiles[k]} i={before + ri} lowerIsBetter={LOWER_IS_BETTER.has(k)} />
+                      <PctBar pct={p.percentiles[k]} i={firstSlot + ri} lowerIsBetter={LOWER_IS_BETTER.has(k)} />
                       <Text type="supporting" display="block" justify="end" hasTabularNumbers>{fmtMetric(k, p.per90[k])}</Text>
-                      <Text weight="bold" display="block" justify="end"><Count value={p.percentiles[k]} i={before + ri} /></Text>
+                      <Text weight="bold" display="block" justify="end"><Count value={p.percentiles[k]} i={firstSlot + ri} /></Text>
                     </Grid>
                   ))}
                 </VStack>

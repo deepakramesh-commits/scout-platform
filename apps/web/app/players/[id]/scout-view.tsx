@@ -90,8 +90,7 @@ export async function ScoutView({ id, user, attributes, evidence, peers, role }:
           <VStack gap={3}>
             <Heading level={3}>Reports</Heading>
             {reports.length === 0 && (
-              <EmptyState isCompact title="No reports yet" description="Several scouts can report on one player; each report and their average show here."
-                actions={write || undefined} />
+              <EmptyState isCompact title="No reports yet" description="Several scouts can report on one player; each report and their average show here." />
             )}
             {reports.map((r, i) => <Report key={r.id} r={r} mine={r.author_id === user.id} playerId={id} total={attributes.length} last={i === reports.length - 1} />)}
           </VStack>
@@ -106,7 +105,7 @@ export async function ScoutView({ id, user, attributes, evidence, peers, role }:
         {GROUP_ORDER.map((g) => (
           <Card key={g}>
             <VStack gap={3}>
-              <Heading level={3}>{g === "mental" ? "Mental" : g.charAt(0).toUpperCase() + g.slice(1)}</Heading>
+              <Heading level={3}>{g.charAt(0).toUpperCase() + g.slice(1)}</Heading>
               {attributes.filter((a) => a.grp === g).map((a, i, all) => {
                 const ev = evidence.evidence[a.key] ?? {};
                 const n = ratingsOf(a.key).length;

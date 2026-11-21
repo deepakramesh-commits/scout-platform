@@ -21,10 +21,11 @@ export async function saveMarket(_: MarketState, form: FormData): Promise<Market
   const saved = await db(async (tx) => {
     const can = await getEditRights(tx, id);
     if (!can.market && !can.player) return false;
-    // A value a person enters is no longer demo, so its demo mark goes.
     if (can.player) {
       await tx`update players set height_cm = ${m.heightCm}, preferred_foot = ${m.preferredFoot},
-                 demo_fields = array_remove(array_remove(demo_fields, 'height_cm'), 'preferred_foot')
+                 demo_fields = array(select f from unnest(demo_fields) f
+                   where not (f = 'height_cm' and height_cm is distinct from ${m.heightCm}::int)
+                     and not (f = 'preferred_foot' and preferred_foot is distinct from ${m.preferredFoot}::text))
                where id = ${id}`;
     }
     if (can.market) {
@@ -64,7 +65,8 @@ export async function verifyTest(form: FormData): Promise<void> {
   const id = playerOf(form);
   const testId = String(form.get("testId") ?? "");
   if (!id || !UUID.test(testId)) return;
-  // RLS lets only an admin, or a federation that sees the player, update a test.
-  await db((tx) => tx`update physical_tests set verified = true where id = ${testId} and player_id = ${id}`);
+  await db(async (tx) => {
+    if ((await getEditRights(tx, id)).verifyTest) await tx`update physical_tests set verified = true where id = ${testId} and player_id = ${id}`;
+  });
   redirect(`/players/${id}/market#tests`);
 }

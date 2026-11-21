@@ -39,7 +39,7 @@ export function MarketForm({ playerId, initial, canPlayer, canMarket }: { player
         <Errors title="Market details were not saved" errors={errors} />
         {canPlayer && (
           <Grid columns={{ minWidth: 200, repeat: "fill" }} gap={4}>
-            <NumberInput label="Height (cm)" htmlName="heightCm" value={v.heightCm} onChange={(x: number | null) => set("heightCm")(x)}
+            <NumberInput label="Height (cm)" htmlName="heightCm" value={v.heightCm} onChange={set("heightCm")}
               min={HEIGHT_MIN} max={HEIGHT_MAX} isIntegerOnly hasClear isOptional status={error(errors.heightCm)} />
             <Selector label="Preferred foot" htmlName="preferredFoot" options={FEET} value={v.preferredFoot}
               onChange={(x: string | null) => set("preferredFoot")(x as MarketInput["preferredFoot"])} hasClear isOptional placeholder="Not recorded"
@@ -49,15 +49,15 @@ export function MarketForm({ playerId, initial, canPlayer, canMarket }: { player
         {canMarket && (
           <>
             <Grid columns={{ minWidth: 200, repeat: "fill" }} gap={4}>
-              <DateInput label="Contract ends" value={iso(v.contractEnd)} onChange={(x) => set("contractEnd")(x ?? null)} hasClear isOptional
+              <DateInput label="Contract ends" value={iso(v.contractEnd)} onChange={set("contractEnd")} hasClear isOptional
                 status={error(errors.contractEnd)} />
               <Selector label="Availability" htmlName="availability" value={v.availability} hasClear isOptional placeholder="Not recorded"
                 options={AVAILABILITY.map((a) => ({ value: a, label: AVAILABILITY_LABEL[a] }))}
                 onChange={(x: string | null) => set("availability")(x as MarketInput["availability"])} presentation="adaptive" status={error(errors.availability)} />
             </Grid>
-            <TextInput label="Transfer conditions" htmlName="transferConditions" value={v.transferConditions ?? ""} onChange={(x) => set("transferConditions")(x)}
+            <TextInput label="Transfer conditions" htmlName="transferConditions" value={v.transferConditions ?? ""} onChange={set("transferConditions")}
               isOptional placeholder="e.g. Fee negotiable, sell-on clause 15%" status={error(errors.transferConditions)} />
-            <TextInput label="Representative" htmlName="representative" value={v.representative ?? ""} onChange={(x) => set("representative")(x)}
+            <TextInput label="Representative" htmlName="representative" value={v.representative ?? ""} onChange={set("representative")}
               isOptional placeholder="Agent or agency, if any" status={error(errors.representative)} />
           </>
         )}
@@ -86,7 +86,7 @@ export function TestForm({ playerId, kinds, canVerify, today }: {
         <Grid columns={{ minWidth: 200, repeat: "fill" }} gap={4}>
           <Selector label="Test" htmlName="test" options={kinds} value={test} onChange={setTest} isRequired placeholder="Choose a test"
             presentation="adaptive" status={error(errors.test)} />
-          <NumberInput label={range?.unit ? `Result (${range.unit})` : "Result"} htmlName="value" value={value} onChange={(x: number | null) => setValue(x)}
+          <NumberInput label={range?.unit ? `Result (${range.unit})` : "Result"} htmlName="value" value={value} onChange={setValue}
             step={0.01} hasClear isRequired description={range ? `Usually ${range.min} to ${range.max}` : undefined} status={error(errors.value)} />
           <DateInput label="Tested on" value={iso(testedAt)} onChange={setTestedAt} max={iso(today)} isRequired status={error(errors.testedAt)} />
         </Grid>

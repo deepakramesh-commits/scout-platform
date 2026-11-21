@@ -4,7 +4,6 @@ export const RECOMMENDATIONS = ["sign", "follow", "pass"] as const;
 export type Recommendation = (typeof RECOMMENDATIONS)[number];
 export const RECOMMENDATION_LABEL: Record<Recommendation, string> = { sign: "Sign", follow: "Follow", pass: "Pass" };
 
-/** Who may write a scout report; RLS enforces the same list. */
 export const REPORT_ROLES = ["scout", "agent", "admin"];
 
 export const TEXT_MAX = 4000;

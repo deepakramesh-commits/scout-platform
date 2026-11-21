@@ -20,7 +20,6 @@ export async function saveReport(_: ReportState, form: FormData): Promise<Report
   if (!parsed.ok) return { errors: parsed.errors };
   const r = parsed.value;
 
-  // RLS checks the role, the organisation, authorship and that the player is visible; an update of someone else's report returns no row.
   const id = await db(async (tx) => {
     const [row] = reportId
       ? await tx<{ id: string }[]>`

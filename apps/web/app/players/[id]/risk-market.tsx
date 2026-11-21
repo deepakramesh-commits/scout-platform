@@ -26,7 +26,6 @@ type Market = { contract_end: string | null; availability: Availability | null; 
 type MatchCell = { match_id: string; index: number; opponent_stronger: boolean; minutes: number; opponent: string; kickoff: Date | null };
 type CurveRow = { id: string; display_name: string; birth_year: number; value: number };
 
-// Band percentiles with fewer ranked players than this say nothing, so they are not shown.
 const BAND_MIN_PEERS = 5;
 const STATUS: Record<RiskStatus, { label: string; color: "green" | "yellow" | "default" }> = {
   good: { label: "Good", color: "green" }, caution: { label: "Caution", color: "yellow" }, unknown: { label: "Unknown", color: "default" },
@@ -38,7 +37,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 
 export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) {
-  const [[market], tests, cells, roles, [foot], [comp], curve, can] = await db((tx) => Promise.all([
+  const [[market], tests, cells, roles, [foot], [comp], curve, can, [inRole]] = await db((tx) => Promise.all([
     tx<Market[]>`select to_char(contract_end, 'YYYY-MM-DD') as contract_end, availability, transfer_conditions, representative, is_demo
                  from player_market where player_id = ${id}`,
     getTests(tx, id),
@@ -47,11 +46,13 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
       from player_match_index i join matches m on m.id = i.match_id join teams t on t.id = i.opponent_team_id
       where i.player_id = ${id} order by m.kickoff_at nulls last`,
     tx<{ position: string }[]>`
-      select position from lineups where player_id = ${id} and minutes_played > 0 and position is not null
-      group by position order by sum(minutes_played) desc`,
+      select l.position from lineups l join matches m on m.id = l.match_id
+      where l.player_id = ${id} and l.minutes_played > 0 and l.position is not null and m.status = 'published'
+      group by l.position order by sum(l.minutes_played) desc`,
     tx<{ right: number; left: number }[]>`
       select count(*) filter (where body_part = 'Right Foot')::int as right, count(*) filter (where body_part = 'Left Foot')::int as left
-      from events where player_id = ${id} and type in ('pass', 'shot')`,
+      from events e join matches m on m.id = e.match_id
+      where e.player_id = ${id} and e.type in ('pass', 'shot') and m.status = 'published'`,
     tx<{ name: string; min_minutes: number }[]>`select name, min_minutes from competitions where id = ${p.competition_id}`,
     tx<CurveRow[]>`
       select p.id, p.display_name, p.birth_year,
@@ -59,13 +60,17 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
       from player_season_metrics m join players p on p.id = m.player_id
       where m.role = ${p.role} and m.competition_id = ${p.competition_id} and m.attr_percentiles <> '{}' and p.birth_year is not null`,
     getEditRights(tx, id),
+    tx<{ n: number }[]>`
+      select count(*)::int as n from lineups l join matches m on m.id = l.match_id
+      where l.player_id = ${id} and l.position = ${p.role} and l.minutes_played > 0
+        and m.competition_id = ${p.competition_id} and m.status = 'published'`,
   ]));
 
   const ageDemo = p.demo_fields.includes("birth_year");
   const risk = assessRisk({
     matches: cells.map((c) => ({ index: c.index, stronger: c.opponent_stronger })),
     roles: roles.map((r) => ROLE_NAMES[r.position] ?? r.position),
-    minutes: p.minutes, matchesPlayed: p.matches, minMinutes: comp?.min_minutes ?? 450,
+    minutes: p.minutes, matchesPlayed: inRole?.n ?? 0, minMinutes: comp?.min_minutes ?? 450,
     birthYear: p.birth_year, birthYearDemo: ageDemo, idVerified: p.id_verified,
     market: market ? { contractEnd: market.contract_end, availability: market.availability, transferConditions: market.transfer_conditions, demo: market.is_demo } : null,
     today: new Date(),
@@ -242,10 +247,9 @@ function Split({ label, values }: { label: string; values: number[] }) {
 function BandTable({ p, plural }: { p: MarketPlayer; plural: string }) {
   if (!p.age_band) return <EmptyState isCompact title="No age band" description="Age not recorded, so he is ranked only against all ages." />;
   if (p.band_peers < BAND_MIN_PEERS) {
-    const band = p.age_band === "senior" ? "senior" : p.age_band;
     return (
       <EmptyState isCompact title="Too few peers in his band"
-        description={`Only ${p.band_peers} ranked ${band} ${plural}; band percentiles need at least ${BAND_MIN_PEERS}. He is ranked against all ages instead.`} />
+        description={`Only ${p.band_peers} ranked ${p.age_band} ${plural}; band percentiles need at least ${BAND_MIN_PEERS}. He is ranked against all ages instead.`} />
     );
   }
   if (p.band_peers === p.peers) {
@@ -254,7 +258,7 @@ function BandTable({ p, plural }: { p: MarketPlayer; plural: string }) {
   const keys = grouped(Object.keys(p.band_percentiles)).flatMap(([, ks]) => ks);
   return (
     <VStack gap={2}>
-      <Text type="supporting">Ranked among {p.band_peers} {p.age_band === "senior" ? "senior" : p.age_band} {plural}.</Text>
+      <Text type="supporting">Ranked among {p.band_peers} {p.age_band} {plural}.</Text>
       <Table density="compact">
         <TableHeader>
           <TableRow>
@@ -279,12 +283,11 @@ function BandTable({ p, plural }: { p: MarketPlayer; plural: string }) {
 
 function TestsTable({ tests }: { tests: TestResult[] }) {
   return (
-    <Table density="compact" style={{ minWidth: "26rem" }}>
+    <Table density="compact">
       <TableHeader>
         <TableRow>
-          <TableHeaderCell style={{ width: "40%" }}>Test</TableHeaderCell>
+          <TableHeaderCell>Test</TableHeaderCell>
           <TableHeaderCell><Text type="inherit" display="block" justify="end">Result</Text></TableHeaderCell>
-          <TableHeaderCell>Tested</TableHeaderCell>
           <TableHeaderCell><Text type="inherit" display="block" justify="end">Percentile</Text></TableHeaderCell>
         </TableRow>
       </TableHeader>
@@ -294,14 +297,14 @@ function TestsTable({ tests }: { tests: TestResult[] }) {
             <TableCell>
               <VStack gap={0}>
                 <Text>{t.label}</Text>
-                <HStack gap={1} vAlign="center">
-                  <Token size="sm" label={t.verified ? "Verified" : "Not verified"} color={t.verified ? "green" : "default"} />
+                <Text type="supporting">Tested {date(t.tested_at)}</Text>
+                <HStack gap={1} vAlign="center" wrap="wrap">
+                  <Token size="sm" label={t.verified ? "Verified" : "Unverified"} color={t.verified ? "green" : "default"} />
                   {t.is_demo && <Demo />}
                 </HStack>
               </VStack>
             </TableCell>
             <TableCell><Text display="block" justify="end" hasTabularNumbers>{t.value} {t.unit}</Text></TableCell>
-            <TableCell><Text type="supporting">{date(t.tested_at)}</Text></TableCell>
             <TableCell><HStack hAlign="end"><PctBadge pct={t.pct} /></HStack></TableCell>
           </TableRow>
         ))}
