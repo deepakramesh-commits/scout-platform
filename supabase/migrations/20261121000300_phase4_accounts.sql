@@ -344,3 +344,45 @@ create function app.shared_report(tok text) returns table (player_id uuid, profi
 language sql stable security definer set search_path = public as $$
   select l.player_id, l.profile_id, l.created_by from report_links l join players p on p.id = l.player_id
   where l.token = tok and l.expires_at > now() and p.visible_to_scouts $$;
+
+-- A player signs up and claims the profile built from match data; an admin checks it is him before linking it.
+create table profile_claims (
+  id uuid primary key default gen_random_uuid(),
+  player_id uuid not null references players on delete cascade,
+  user_id uuid not null references app_users on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'declined')),
+  note text not null default '',
+  created_at timestamptz not null default now(),
+  decided_by uuid references app_users,
+  decided_at timestamptz,
+  unique (player_id, user_id)
+);
+alter table profile_claims enable row level security;
+grant select, insert, update, delete on profile_claims to authenticated;
+create policy own_or_admin on profile_claims for select to authenticated using (user_id = auth.uid() or (select app.is_admin()));
+create policy claim on profile_claims for insert to authenticated
+  with check (user_id = auth.uid() and status = 'pending' and (select app.role()) in ('player', 'guardian'));
+
+create function app.decide_claim(cid uuid, decision text, note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare c profile_claims;
+begin
+  if not app.is_admin() then raise exception 'only an admin decides a claim' using errcode = '42501'; end if;
+  if decision not in ('approved', 'declined') then raise exception 'bad decision'; end if;
+  update profile_claims set status = decision, note = coalesce(note, ''), decided_by = auth.uid(), decided_at = now()
+  where id = cid and status = 'pending' returning * into c;
+  if c.id is null then raise exception 'no pending claim %', cid; end if;
+  if decision = 'approved' then
+    update players set claimed_by = case when (select role from app_users where id = c.user_id) = 'player' then c.user_id else claimed_by end,
+                       guardian_id = case when (select role from app_users where id = c.user_id) = 'guardian' then c.user_id else guardian_id end
+    where id = c.player_id;
+  end if;
+end $$;
+grant execute on function app.decide_claim(uuid, text, text) to authenticated;
+-- Claiming needs to find the profile by name, even one not live to scouts; only names and positions are exposed.
+create function app.claimable_players(q text) returns table (id uuid, display_name text, primary_position text, nationality text)
+language sql stable security definer set search_path = public as $$
+  select id, display_name, primary_position, nationality from players
+  where origin = 'match_data' and claimed_by is null and length(q) >= 3 and display_name ilike '%' || q || '%'
+  order by display_name limit 20 $$;
+grant execute on function app.claimable_players(text) to authenticated;
