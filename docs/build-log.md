@@ -148,3 +148,59 @@ decisions made for you. Every decision has a row in `docs/decisions.md`.
   both feet.
 - Physical test values outside plausible ranges are refused.
 - Demo market values start blank in the edit form.
+
+## Phase 4: accounts, trust and workflow
+
+**Built.**
+- **Login.** Supabase-compatible: `auth.users` with bcrypt and `auth.uid()` from the JWT claims. Every page reads
+  through `db()` as role `authenticated` or `anon`. A unit test fails if any page imports the superuser
+  connection.
+- **Row-level security** on every table, with column-level grants, and an audit of 23 tests that act as each
+  demo user (worker/test_rls.py).
+- **Sign-up for all eight user types.** A player can also claim an existing profile, which an admin approves.
+  Adults go live on consent. Under-18s name a guardian and wait in the approval queue. Staff accounts start
+  inactive.
+- **/account.** Status, the admin's note, consent and its withdrawal, which hides the profile at once and queues
+  deletion of personal data, plus "N clubs viewed this profile" and agent confirmation.
+- **/admin/approvals and /admin/coverage.** Under-18 sign-ups, profile claims and inactive staff, plus coverage
+  of each organisation by competition.
+- **/verify** for a federation or admin, covering only the players of the federation's own competitions:
+  federation registration, ID check, photo, contract status, and a private ID upload only admins can open.
+  Verified and unverified profiles look different everywhere.
+- **Profile views** are recorded.
+- **Scout workflow.** Shortlists with notes and ranks, saved searches with new-match alerts, and a shadow team
+  with shortlisted players ranked in each position.
+- **Scouting report.** It prints to A4 and can be shared by a 14-day link that renders as its creator.
+- **Agent tools.** Own clients, confirmed by the player or guardian, and sending a profile to a club, which
+  arrives in the club's /inbox.
+- **Introduction requests** are recorded for the partner agency. There is no messaging.
+- **Competition and team pages.**
+
+**Checks.**
+- The gate ran all eight checks, including cso: pytest 46, `npm test` 98, tsc clean, `npm run build` passing,
+  and `astryx doctor` 0 failures.
+- The cso review fixed one critical finding, three high, three medium and five low, each with a test first (see
+  decisions.md).
+- Browser flows, checked as each role at 1280 and 390 px:
+  - Sign-up for an adult and two minors, then approve and decline.
+  - Withdraw consent, then confirm a scout can no longer see the profile.
+  - Verification, including the ID file rules: admin 200; federation and scout 404.
+  - Shortlist and shadow team.
+  - Agent share, then the inbox.
+  - Introduction request, then agency status.
+  - Saved-search alert.
+  - Removing coverage hides the competition.
+  - The printed report and the shared link, including expiry.
+
+**Still open.**
+- No rate limit on sign-in.
+- No way to revoke a share link before it expires.
+- Sessions are 14-day signed cookies with no server-side revocation.
+- Demo passwords use bcrypt cost 6. Real sign-ups use 10.
+- Coordinators and analysts are still "staff" for match writes in every competition. This is settled in phase 5.
+
+**Decisions made for you.**
+- The claim search shows only live profiles, putting minors' privacy ahead of convenience.
+- An agent needs the player's (or guardian's) confirmation before editing his details.
+- A decline needs a note, because the player reads it.
+- Withdrawing consent keeps the guardian's name as the record of who signed, and deletes the contact.
