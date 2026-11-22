@@ -34,6 +34,8 @@ def competition_xt(cur, comp_id) -> pd.DataFrame:
     actions = spadl.add_names(pd.concat(frames, ignore_index=True))
     model = ExpectedThreat(l=16, w=12)
     model.fit(actions)
+    if not model.xT.any():  # no shot in the competition yet: nothing is worth anything, and rate() would refuse
+        return pd.DataFrame(columns=["match_id", "player_id", "value"])
     actions["value"] = model.rate(actions)
     rated = actions.dropna(subset=["value"])
 

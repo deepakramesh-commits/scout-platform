@@ -85,3 +85,18 @@ def test_a_player_s_position_is_where_he_played_most_across_every_competition(cu
     set_primary_positions(cur, [ids["a"]])
     cur.execute("select primary_position from players where id = %s", (ids["a"],))
     assert cur.fetchone()[0] == "CB"
+
+
+def test_a_competition_with_no_shot_yet_still_computes(cur):
+    # Regression: ISSUE-001 found by /qa on 2026-11-22. The first published match of a new league can hold no shot;
+    # the xT surface is then all zeros and socceraction refuses to rate with NotFittedError, failing the publish job.
+    ids = make_world(cur)
+    cur.execute("update matches set kickoff_at = now() where id = %s", (ids["m2"],))
+    lineup(cur, ids, "m2", "a", "A", "ST", 90)
+    for i, (x, ex) in enumerate(((50, 80), (80, 100))):
+        cur.execute("insert into events (match_id, player_id, team_id, period, video_seconds, type, outcome, x, y, end_x, end_y) "
+                    "values (%s,%s,%s,1,%s,'pass','complete',%s,40,%s,40)", (ids["m2"], ids["a"], ids["A"], i * 10, x, ex))
+    cur.execute("select key, metrics from attributes")
+    compute_competition(cur, ids["league"], 1, dict(cur.fetchall()))
+    cur.execute("select (per90->>'xt')::float from player_season_metrics where competition_id = %s", (ids["league"],))
+    assert cur.fetchall() == [(0.0,)]
