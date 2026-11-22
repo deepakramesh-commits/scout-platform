@@ -5,7 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test \"lib/**/*.test.ts\""
+    "test": "node --test \"lib/**/*.test.ts\"",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@astryxdesign/cli": "^0.7.12",
@@ -19,6 +20,7 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",

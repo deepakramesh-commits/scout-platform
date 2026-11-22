@@ -1,0 +1,15 @@
+/* Data-engine visuals with no Astryx component: the match video and the 2D logging pitch. Tokens only. */
+.match-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: var(--color-background-muted); border-radius: var(--radius-element); }
+
+.log-pitch { display: block; width: 100%; cursor: crosshair; border-radius: var(--radius-element); background: var(--color-background-muted); touch-action: manipulation; }
+.log-pitch .line { fill: none; stroke: var(--color-border-emphasized); stroke-width: 0.4; opacity: 1; }
+.log-pitch .dir { fill: var(--color-text-secondary); }
+.log-pitch .start { fill: var(--color-icon-teal); }
+.log-pitch .end { fill: none; stroke: var(--color-icon-teal); stroke-width: 0.8; }
+.log-pitch .path { stroke: var(--color-icon-teal); stroke-width: 0.6; stroke-dasharray: 1.5 1; }
+.log-pitch .ghost { fill: var(--color-text-secondary); opacity: 0.35; }
+
+/* A saved mark lands with a short pop; keyboard-paced work, so it stays well under 200ms. */
+.log-pitch .start, .log-pitch .end { transform-box: fill-box; transform-origin: center; animation: mark-in 140ms var(--ease-out) backwards; }
+@keyframes mark-in { from { opacity: 0; transform: scale(0.5); } }
+@media (prefers-reduced-motion: reduce) { .log-pitch .start, .log-pitch .end { animation: none; } }
