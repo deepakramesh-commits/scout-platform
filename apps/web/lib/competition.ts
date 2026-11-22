@@ -10,3 +10,24 @@ export const matchRows = (q: Q, by: { competition?: string; team?: string }) => 
   where (${by.competition ?? null}::uuid is null or m.competition_id = ${by.competition ?? null})
     and (${by.team ?? null}::uuid is null or ${by.team ?? null} in (m.home_team_id, m.away_team_id))
   order by m.kickoff_at desc nulls first`;
+
+/** A competition whose computed numbers a page reads; `name` includes the season. Percentiles never pool across competitions. */
+export type RankedCompetition = { id: string; name: string; min_minutes: number };
+export type PlayerCompetition = RankedCompetition & { minutes: number };
+
+/** Competitions with computed numbers this user may read (row-level security decides), newest season first. */
+export const rankedCompetitions = (q: Q) => q<RankedCompetition[]>`
+  select c.id, c.name || ' ' || c.season as name, c.min_minutes from competitions c
+  where exists (select 1 from player_season_metrics m where m.competition_id = c.id)
+  order by c.season desc, c.name`;
+
+/** The competitions a player has numbers in, the one he played most first. */
+export const playerCompetitions = (q: Q, playerId: string) => q<PlayerCompetition[]>`
+  select c.id, c.name || ' ' || c.season as name, c.min_minutes, sum(m.minutes)::int as minutes
+  from player_season_metrics m join competitions c on c.id = m.competition_id
+  where m.player_id = ${playerId}
+  group by c.id order by minutes desc, c.season desc, c.name`;
+
+/** The competition asked for when it is one of the options, else the first option. */
+export const pickCompetition = <T extends { id: string }>(options: T[], id: string | null | undefined): T | null =>
+  options.find((o) => o.id === id) ?? options[0] ?? null;

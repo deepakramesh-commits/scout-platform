@@ -53,6 +53,7 @@ if __name__ == "__main__":
     import os
     import psycopg
     with psycopg.connect(os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:54330/postgres")) as conn, conn.cursor() as cur:
-        cur.execute("select id from competitions limit 1")
-        df = competition_xt(cur, cur.fetchone()[0])
-        print(len(df), df["value"].describe().to_string())
+        cur.execute("select id, name from competitions")
+        for comp_id, name in cur.fetchall():
+            df = competition_xt(cur, comp_id)
+            print(name, len(df), df["value"].describe().to_string())

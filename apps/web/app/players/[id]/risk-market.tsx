@@ -50,7 +50,7 @@ export async function loadRiskMarket(tx: Q, id: string, p: RiskPlayer) {
     tx<MatchCell[]>`
       select i.match_id, i.index, i.opponent_stronger, i.minutes, t.name as opponent, m.kickoff_at as kickoff
       from player_match_index i join matches m on m.id = i.match_id join teams t on t.id = i.opponent_team_id
-      where i.player_id = ${id} order by m.kickoff_at nulls last`,
+      where i.player_id = ${id} and i.competition_id = ${p.competition_id} order by m.kickoff_at nulls last`,
     tx<{ position: string }[]>`
       select l.position from lineups l join matches m on m.id = l.match_id
       where l.player_id = ${id} and l.minutes_played > 0 and l.position is not null and m.status = 'published'
@@ -59,7 +59,7 @@ export async function loadRiskMarket(tx: Q, id: string, p: RiskPlayer) {
       select count(*) filter (where body_part = 'Right Foot')::int as right, count(*) filter (where body_part = 'Left Foot')::int as left
       from events e join matches m on m.id = e.match_id
       where e.player_id = ${id} and e.type in ('pass', 'shot') and m.status = 'published'`,
-    tx<{ name: string; min_minutes: number }[]>`select name, min_minutes from competitions where id = ${p.competition_id}`,
+    tx<{ name: string; min_minutes: number }[]>`select name || ' ' || season as name, min_minutes from competitions where id = ${p.competition_id}`,
     getEditRights(tx, id),
     tx<{ n: number }[]>`
       select count(*)::int as n from lineups l join matches m on m.id = l.match_id
@@ -140,9 +140,9 @@ export async function RiskAndMarket({ id, p }: { id: string; p: MarketPlayer }) 
       <Card>
         <VStack gap={3}>
           <VStack gap={1}>
-            <Heading level={2}>Match by match</Heading>
+            <Heading level={2}>Match by match{comp && ` in ${comp.name}`}</Heading>
             <Text type="supporting">
-              The index compares each of his matches with every match by a player in the same role: his actions per 90 minutes, with ball losses counted against him, averaged and ranked from 0 to 100.
+              The index compares each of his matches with every match by a player in the same role in that competition: his actions per 90 minutes, with ball losses counted against him, averaged and ranked from 0 to 100.
               Only matches of 30 minutes or more count, and a stronger opponent is one with a better goal difference per match in the competition than his own team.
             </Text>
           </VStack>

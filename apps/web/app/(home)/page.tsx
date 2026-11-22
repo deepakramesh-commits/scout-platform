@@ -22,7 +22,7 @@ import { Count, Demo, flag, PctBadge, PlayerAvatar, Standouts } from "../ui";
 
 export const dynamic = "force-dynamic";
 
-type Kpis = { players: number; matches: number; nations: number; events: number; qualified: number };
+type Kpis = { players: number; matches: number; teams: number; events: number; qualified: number };
 type Featured = { id: string; display_name: string; id_verified: boolean; photo_url: string | null; team: string | null; role: string; minutes: number; per90: Record<string, number | null>; percentiles: Record<string, number> };
 
 // The featured prospect is the leader of the first preset, so it always matches a list the scout can open.
@@ -36,26 +36,31 @@ export default async function Search(props: { searchParams: Promise<SearchParams
 async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<SearchParams> }) {
   const q = await searchParams;
   const [options, attributes] = await Promise.all([searchOptions(tx), getAttributes(tx)]);
-  const { keys, roles, countries } = options;
+  const { keys, roles, countries, competitions } = options;
   const attrLabels = Object.fromEntries(attributes.map((a) => [a.key, a.label]));
   const initial = parseSearch(q, options);
   const sort = initial.sort ?? "";
   const ascending = LOWER_IS_BETTER.has(sort);
+  const comp = competitions.find((c) => c.id === initial.competition) ?? null;
+  const cid = comp?.id ?? null;
 
   const [[kpi], [featured], rows] = await Promise.all([
     tx<Kpis[]>`
-      select (select count(*)::int from players where visible_to_scouts) as players,
-             (select count(*)::int from matches) as matches,
-             (select count(*)::int from teams) as nations,
-             (select count(*)::int from events) as events,
+      select (select count(distinct m.player_id)::int from player_season_metrics m join players p on p.id = m.player_id
+               where p.visible_to_scouts and m.competition_id = ${cid}) as players,
+             (select count(*)::int from matches where competition_id = ${cid} and status = 'published') as matches,
+             (select count(distinct t)::int from matches m, unnest(array[m.home_team_id, m.away_team_id]) t
+               where m.competition_id = ${cid} and m.status = 'published') as teams,
+             (select count(*)::int from events e join matches m on m.id = e.match_id
+               where m.competition_id = ${cid} and m.status = 'published') as events,
              (select count(distinct m.player_id)::int from player_season_metrics m join players p on p.id = m.player_id
-               where p.visible_to_scouts and m.style is not null) as qualified`,
+               where p.visible_to_scouts and m.competition_id = ${cid} and m.style is not null) as qualified`,
     tx<Featured[]>`
       select p.id, p.display_name, p.id_verified, p.photo_url, lt.team, m.role, m.minutes, m.per90, m.percentiles
       from player_season_metrics m
       join players p on p.id = m.player_id
       ${latestTeam(tx)}
-      where p.visible_to_scouts and m.role = ${FEATURED.role} and (m.percentiles ->> ${FEATURED.sort}) is not null
+      where p.visible_to_scouts and m.competition_id = ${cid} and m.role = ${FEATURED.role} and (m.percentiles ->> ${FEATURED.sort}) is not null
       order by (m.per90 ->> ${FEATURED.sort})::float8 desc
       limit 1`,
     searchRows(tx, initial),
@@ -63,18 +68,22 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
   const { role } = initial;
 
   const tiles = [
-    { label: "Players", value: kpi.players, note: "Every squad member at the finals" },
-    { label: "Matches", value: kpi.matches, note: "Group stage to final" },
-    { label: "Nations", value: kpi.nations, note: "Teams at AFCON 2023" },
-    { label: "Events", value: Math.round(kpi.events / 1000), suffix: "k", note: `${kpi.events.toLocaleString("en")} on-ball actions` },
-    { label: "Qualified", value: kpi.qualified, note: "270+ minutes, ranked by position" },
+    { label: "Players", value: kpi.players, note: "With minutes on the pitch" },
+    { label: "Matches", value: kpi.matches, note: "Published, every action logged" },
+    { label: "Teams", value: kpi.teams, note: "That played a published match" },
+    { label: "Events", value: Math.round(kpi.events / 1000), suffix: "k", note: `${kpi.events.toLocaleString("en")} logged actions` },
+    { label: "Qualified", value: kpi.qualified, note: `${comp?.min_minutes ?? 0}+ minutes, ranked by position` },
   ];
 
   return (
     <VStack gap={6}>
       <VStack gap={1}>
         <Heading level={1}>Find your next player</Heading>
-        <Text color="secondary">Every player at AFCON 2023, scored on {keys.length} per-90 measures and ranked against others in the same position.</Text>
+        <Text color="secondary">
+          {comp
+            ? `Every player in ${comp.name}, scored on ${keys.length} per-90 measures and ranked against others in the same position in that competition.`
+            : "No competition in your plan has published numbers yet. Ask us to add one."}
+        </Text>
       </VStack>
 
       <Grid columns={{ minWidth: 150, repeat: "fit" }} gap={3}>
@@ -90,10 +99,10 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
       </Grid>
 
       <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4}>
-        {featured && <FeaturedCard p={featured} />}
+        {featured && comp && <FeaturedCard p={featured} competition={comp} />}
         <Grid columns={{ minWidth: 220, repeat: "fit" }} gap={3}>
           {PRESETS.filter((p) => roles.includes(p.role) && keys.includes(p.sort)).map((p) => (
-            <ClickableCard key={p.title} className="lift" label={p.title} href={`/?role=${p.role}&sort=${p.sort}`}
+            <ClickableCard key={p.title} className="lift" label={p.title} href={`/?${new URLSearchParams({ ...(cid && { competition: cid }), role: p.role, sort: p.sort })}`}
               variant={role === p.role && sort === p.sort ? "green" : "default"}>
               <VStack gap={1}>
                 <Text weight="semibold">{p.title}</Text>
@@ -109,13 +118,14 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
         <VStack gap={4}>
           <HStack hAlign="between" vAlign="center" wrap="wrap" gap={2}>
             <Heading level={3}>Players</Heading>
-            <Text type="supporting">{rows.length === 100 ? "Top 100" : `${rows.length} players`} · ranked by {metricLabel(sort).toLowerCase()}{unit(sort) === "/ 90" ? " per 90" : ""}</Text>
+            <Text type="supporting">{rows.length === 100 ? "Top 100" : `${rows.length} players`} · ranked by {metricLabel(sort).toLowerCase()}{unit(sort) === "/ 90" ? " per 90" : ""}{comp && ` within ${comp.name}`}</Text>
           </HStack>
           <Filters
             key={JSON.stringify(initial)}
             roles={roles.map((r) => ({ value: r, label: ROLE_NAMES[r] ?? r }))}
             metrics={keys.map((k) => ({ value: k, label: label(k) }))}
             countries={countries.map((c) => ({ value: c, label: c }))}
+            competitions={competitions.map((c) => ({ value: c.id, label: c.name }))}
             initial={{ ...initial, sort }}
           />
           <SaveSearch query={searchQuery(initial)} />
@@ -140,7 +150,7 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
                 <TableRow key={`${r.id}-${r.role}`} className={i < 10 ? "in" : undefined} style={i < 10 ? ({ "--i": i } as React.CSSProperties) : undefined}>
                   <TableCell><Text type="supporting" hasTabularNumbers>{i + 1}</Text></TableCell>
                   <TableCell>
-                    <Link href={`/players/${r.id}`}>
+                    <Link href={cid ? `/players/${r.id}?comp=${cid}` : `/players/${r.id}`}>
                       <HStack gap={2} vAlign="center">
                         {/* a player can be listed once per position; only the first row owns the transition name */}
                         {rows.findIndex((o) => o.id === r.id) === i
@@ -165,14 +175,14 @@ async function SearchPage(tx: Q, { searchParams }: { searchParams: Promise<Searc
               )}
             </TableBody>
           </Table>
-          <Text type="supporting">Percentiles compare players in the same position who played enough minutes to judge. Players below the cut-off show “–” and sort last.</Text>
+          <Text type="supporting">Percentiles compare players in the same position and competition who played enough minutes to judge{comp && ` (${comp.min_minutes} in ${comp.name})`}. Players below the cut-off show “–” and sort last. A player with numbers in several competitions is ranked within each one separately.</Text>
         </VStack>
       </Card>
     </VStack>
   );
 }
 
-function FeaturedCard({ p }: { p: Featured }) {
+function FeaturedCard({ p, competition }: { p: Featured; competition: { id: string; name: string } }) {
   const top = Object.keys(p.percentiles).filter((k) => !LOWER_IS_BETTER.has(k)).sort((a, b) => p.percentiles[b] - p.percentiles[a]).slice(0, 3);
   return (
     <Card className="rise" elevation="low">
@@ -182,7 +192,7 @@ function FeaturedCard({ p }: { p: Featured }) {
           <VStack gap={1}>
             <Text type="label" color="accent">Featured prospect</Text>
             <HStack gap={2} vAlign="center" wrap="wrap"><Heading level={2}>{p.display_name}</Heading><VerifiedMark verified={p.id_verified} /></HStack>
-            <Text color="secondary">{flag(p.team)} {p.team} · {ROLE_NAMES[p.role] ?? p.role} · {p.minutes} min</Text>
+            <Text color="secondary">{flag(p.team)} {p.team} · {ROLE_NAMES[p.role] ?? p.role} · {p.minutes} min in {competition.name}</Text>
           </VStack>
         </HStack>
         <Grid columns={{ minWidth: 120, repeat: "fit" }} gap={2}>
@@ -196,8 +206,8 @@ function FeaturedCard({ p }: { p: Featured }) {
           ))}
         </Grid>
         <HStack gap={2} wrap="wrap">
-          <Button variant="primary" label="Open profile" href={`/players/${p.id}`} />
-          <Button label="Compare" href={`/compare?a=${p.id}`} />
+          <Button variant="primary" label="Open profile" href={`/players/${p.id}?comp=${competition.id}`} />
+          <Button label="Compare" href={`/compare?a=${p.id}&ca=${competition.id}`} />
         </HStack>
       </VStack>
     </Card>

@@ -18,22 +18,24 @@ export default async function ReportPrintPage({ params, searchParams }: {
   const user = await requireScouting();
   const [{ id }, q] = await Promise.all([params, searchParams]);
   const asked = typeof q.profile === "string" && UUID.test(q.profile) ? q.profile : null;
+  const askedComp = typeof q.comp === "string" && UUID.test(q.comp) ? q.comp : null;
   if (!UUID.test(id)) notFound();
-  const data = await loadReport(id, asked, user.id);
+  const data = await loadReport(id, asked, user.id, askedComp);
   if (!data) notFound();
-  const { profile, profiles } = data;
+  const { profile, profiles, p } = data;
+  const comp = p.role == null ? null : p.competition_id;
 
   return (
     <VStack gap={4}>
       <HStack className="no-print">
-        <Button variant="ghost" size="sm" label="Back to profile" href={`/players/${id}`} icon={<Icon icon="chevronLeft" />} />
+        <Button variant="ghost" size="sm" label="Back to profile" href={comp ? `/players/${id}?comp=${comp}` : `/players/${id}`} icon={<Icon icon="chevronLeft" />} />
       </HStack>
       <ScoutingReport
         data={data}
         tools={
-          <ReportTools share={createShareLink.bind(null, id, profile?.id ?? null)}>
+          <ReportTools share={createShareLink.bind(null, id, profile?.id ?? null, comp)}>
             {profile && (
-              <ProfilePicker key={profile.id} action={`/players/${id}/report/print`} name="profile" value={profile.id} label="Fit against"
+              <ProfilePicker key={profile.id} action={`/players/${id}/report/print`} name="profile" value={profile.id} label="Fit against" keep={{ comp }}
                 options={profiles.map((r) => ({ value: r.id, label: r.name, description: r.club ?? undefined }))} />
             )}
           </ReportTools>

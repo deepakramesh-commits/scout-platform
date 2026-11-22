@@ -9,6 +9,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting, type Q } from "@/lib/auth";
+import { pickCompetition, rankedCompetitions, type RankedCompetition } from "@/lib/competition";
 import { fitScore, PRIORITY_LABEL, standouts, type Fit } from "@/lib/fit";
 import { ROLE_NAMES } from "@/lib/metrics";
 import { latestTeam } from "@/lib/queries";
@@ -27,11 +28,12 @@ type Ranked = Candidate & { fit: Fit; demo: boolean };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
-const candidates = (tx: Q, p: Profile) => tx<Candidate[]>`
+const candidates = (tx: Q, p: Profile, competitionId: string | null) => tx<Candidate[]>`
   select p.id, p.display_name, p.photo_url, lt.team, m.role, m.minutes, m.peers, m.attr_percentiles, p.birth_year,
          'birth_year' = any(p.demo_fields) as age_is_demo, p.id_verified
   from players p
-  join lateral (select * from player_season_metrics m where m.player_id = p.id order by m.minutes desc limit 1) m on true
+  join lateral (select * from player_season_metrics m where m.player_id = p.id and m.competition_id = ${competitionId}
+                order by m.minutes desc limit 1) m on true
   ${latestTeam(tx)}
   where p.visible_to_scouts and m.role = any(${p.positions}::text[])
     and (${p.age_min}::int is null or ${SEASON_YEAR} - p.birth_year >= ${p.age_min})
@@ -44,7 +46,7 @@ export default async function FindByRole(props: { searchParams: Promise<Record<s
 
 async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const q = await searchParams;
-  const [profiles, attributes] = await Promise.all([getProfiles(tx), getAttributes(tx)]);
+  const [profiles, attributes, competitions] = await Promise.all([getProfiles(tx), getAttributes(tx), rankedCompetitions(tx)]);
   const labels = Object.fromEntries(attributes.map((a) => [a.key, a.label]));
 
   if (!profiles.length) {
@@ -60,8 +62,9 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
   }
 
   const profile = profiles.find((p) => p.id === first(q.profile)) ?? profiles[0];
-  const pool = await candidates(tx, profile);
-  const evidence = await getEvidence(tx, pool.map((c) => c.id));
+  const comp = pickCompetition(competitions, first(q.comp));
+  const pool = await candidates(tx, profile, comp?.id ?? null);
+  const evidence = await getEvidence(tx, pool.map((c) => c.id), comp?.id ?? null);
   const ranked: Ranked[] = pool.map((c) => {
     const pe = evidence.get(c.id)!;
     return { ...c, fit: fitScore(profile.items, pe.evidence), demo: profile.items.some((i) => pe.demo.has(i.attribute)) };
@@ -76,15 +79,21 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
     <VStack gap={6}>
       <VStack gap={1}>
         <Heading level={1}>Find by role</Heading>
-        <Text color="secondary">Start from what the club needs. Every player in the profile’s positions, ranked by how well his evidence fits it.</Text>
+        <Text color="secondary">Start from what the club needs. Every player in the profile’s positions, ranked by how well his evidence fits it within one competition.</Text>
       </VStack>
 
       <Card>
         <VStack gap={4}>
           <HStack gap={3} wrap="wrap" vAlign="end" hAlign="between">
             <StackItem size="fill">
-              <ProfilePicker key={profile.id} action="/roles" name="profile" value={profile.id}
-                options={profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />
+              <HStack gap={3} wrap="wrap" vAlign="end">
+                <ProfilePicker key={profile.id} action="/roles" name="profile" value={profile.id} keep={{ comp: comp?.id ?? null }}
+                  options={profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />
+                {competitions.length > 1 && comp && (
+                  <ProfilePicker key={comp.id} action="/roles" name="comp" value={comp.id} label="Competition" keep={{ profile: profile.id }}
+                    options={competitions.map((c) => ({ value: c.id, label: c.name }))} />
+                )}
+              </HStack>
             </StackItem>
             <Button variant="ghost" label="Write your own profile" href="/profiles" />
           </HStack>
@@ -109,7 +118,7 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
 
       {ranked.length === 0 ? (
         <Card>
-          <EmptyState title="No players in these positions" description={`No visible player plays mainly as ${profile.positions.map((r) => (ROLE_NAMES[r] ?? r).toLowerCase()).join(" or ")}${ages ? `, ${ages}` : ""}. Widen the age range or the positions in a new profile.`}
+          <EmptyState title="No players in these positions" description={`No visible player plays mainly as ${profile.positions.map((r) => (ROLE_NAMES[r] ?? r).toLowerCase()).join(" or ")}${comp ? ` in ${comp.name}` : ""}${ages ? `, ${ages}` : ""}. Widen the age range or the positions in a new profile.`}
             actions={<Button label="Write a profile" href="/profiles" />} />
         </Card>
       ) : (
@@ -117,10 +126,10 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
           <Card>
             <VStack gap={4}>
               <HStack hAlign="between" vAlign="center" wrap="wrap" gap={2}>
-                <Heading level={3}>Ranked by fit</Heading>
+                <Heading level={3}>Ranked by fit{comp && ` within ${comp.name}`}</Heading>
                 <Text type="supporting">{scored.length} of {ranked.length} players have enough evidence for a score</Text>
               </HStack>
-              <FitTable rows={scored} labels={labels} empty="No player has enough evidence for this profile yet." />
+              <FitTable rows={scored} labels={labels} comp={comp} empty="No player has enough evidence for this profile yet." />
             </VStack>
           </Card>
           {thin.length > 0 && (
@@ -130,12 +139,12 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
                   <Heading level={3}>Not enough evidence</Heading>
                   <Text type="supporting">Less than half of the weighted profile is measured for these players, so they get no score. More minutes, a physical test or a scout report would change that.</Text>
                 </VStack>
-                <FitTable rows={thin} labels={labels} empty="" />
+                <FitTable rows={thin} labels={labels} comp={comp} empty="" />
               </VStack>
             </Card>
           )}
           <Text type="supporting">
-            Fit averages the evidence for each attribute (match percentile within the position, physical test percentile among tested players,
+            Fit averages the evidence for each attribute (match percentile within the position in {comp?.name ?? "the competition"}, physical test percentile among tested players,
             your organisation’s average scout rating × 10), weighted very high 3, high 2, medium 1. A Demo mark means some of the evidence comes from demo tests or demo reports.
           </Text>
         </>
@@ -144,7 +153,7 @@ async function FindByRolePage(tx: Q, { searchParams }: { searchParams: Promise<R
   );
 }
 
-function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<string, string>; empty: string }) {
+function FitTable({ rows, labels, comp, empty }: { rows: Ranked[]; labels: Record<string, string>; comp: RankedCompetition | null; empty: string }) {
   return (
     <Table density="compact" hasHover style={{ minWidth: "44rem" }}>
       <TableHeader>
@@ -167,7 +176,7 @@ function FitTable({ rows, labels, empty }: { rows: Ranked[]; labels: Record<stri
               </VStack>
             </TableCell>
             <TableCell>
-              <Link href={`/players/${r.id}`}>
+              <Link href={comp ? `/players/${r.id}?comp=${comp.id}` : `/players/${r.id}`}>
                 <HStack gap={2} vAlign="center">
                   <PlayerAvatar name={r.display_name} photo={r.photo_url} />
                   <VStack gap={0}>

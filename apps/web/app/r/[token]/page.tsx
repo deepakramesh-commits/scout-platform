@@ -9,14 +9,14 @@ import { ReportTools } from "../../players/[id]/report/print/tools";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Scouting report · Scout", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
-type Link = { player_id: string; profile_id: string | null; created_by: string };
+type Link = { player_id: string; profile_id: string | null; created_by: string; competition_id: string | null };
 
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const [link] = isShareToken(token)
-    ? await db((tx) => tx<Link[]>`select player_id, profile_id, created_by from app.shared_report(${token})`, null)
+    ? await db((tx) => tx<Link[]>`select player_id, profile_id, created_by, competition_id from app.shared_report(${token})`, null)
     : [];
-  const data = link ? await loadReport(link.player_id, link.profile_id, link.created_by) : null;
+  const data = link ? await loadReport(link.player_id, link.profile_id, link.created_by, link.competition_id) : null;
   if (!data) {
     return (
       <Card>

@@ -1,7 +1,8 @@
 import type { Q } from "./auth";
-import { LOWER_IS_BETTER, metricKeys } from "./metrics";
+import { rankedCompetitions } from "./competition";
+import { label, LOWER_IS_BETTER, metricKeys } from "./metrics";
 import { SEASON_YEAR } from "./scouting";
-import { parseSearch, type SearchFilters, type SearchOptions } from "./search";
+import { describeSearch, parseSearch, type SearchFilters } from "./search";
 
 // Team for alias `p` = the side they played for in their latest match. Exposes `lt.team`.
 export const latestTeam = (q: Q) => q`
@@ -28,7 +29,7 @@ export const searchRows = (q: Q, f: SearchFilters, limit = 100) => {
     join players p on p.id = m.player_id
     left join player_market pm on pm.player_id = p.id
     ${latestTeam(q)}
-    where p.visible_to_scouts
+    where p.visible_to_scouts and m.competition_id = ${f.competition}
       and (${f.role}::text is null or m.role = ${f.role})
       and (${f.name}::text is null or p.display_name ilike '%' || ${f.name} || '%')
       and m.minutes >= ${f.minMinutes ?? 0}
@@ -41,17 +42,20 @@ export const searchRows = (q: Q, f: SearchFilters, limit = 100) => {
     limit ${limit}`;
 };
 
-export const searchOptions = async (q: Q): Promise<SearchOptions> => {
-  const [keys, roles, countries] = await Promise.all([
+export const searchOptions = async (q: Q) => {
+  const [keys, roles, countries, competitions] = await Promise.all([
     metricKeys(q),
     q<{ role: string }[]>`select distinct role from player_season_metrics order by 1`.then((rs) => rs.map((r) => r.role)),
     q<{ c: string }[]>`select distinct nationality as c from players where nationality is not null and visible_to_scouts order by 1`.then((rs) => rs.map((r) => r.c)),
+    rankedCompetitions(q),
   ]);
-  return { keys, roles, countries };
+  return { keys, roles, countries, competitions };
 };
 
 export async function currentMatches(q: Q, query: string) {
-  const filters = parseSearch(Object.fromEntries(new URLSearchParams(query)), await searchOptions(q));
+  const options = await searchOptions(q);
+  const filters = parseSearch(Object.fromEntries(new URLSearchParams(query)), options);
   const rows = await searchRows(q, filters, 5000);
-  return { filters, ids: [...new Set(rows.map((r) => r.id))] };
+  const competition = (id: string) => options.competitions.find((c) => c.id === id)?.name ?? "not in your plan";
+  return { filters, ids: [...new Set(rows.map((r) => r.id))], description: describeSearch(filters, { metric: label, competition }) };
 }

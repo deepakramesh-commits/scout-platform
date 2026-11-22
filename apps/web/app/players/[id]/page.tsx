@@ -11,6 +11,7 @@ import { StackItem } from "@astryxdesign/core/Stack";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting } from "@/lib/auth";
+import { playerCompetitions } from "@/lib/competition";
 import { fmtMetric, grouped, LOWER_IS_BETTER, metricLabel, rolePlural, smallGroupNote } from "@/lib/metrics";
 import { recordProfileView } from "@/lib/profile-views";
 import { latestTeam } from "@/lib/queries";
@@ -28,6 +29,7 @@ import { loadRiskMarket, MarketFacts, RiskAndMarket, TestsTable } from "./risk-m
 import { ReportSummary } from "./report-summary";
 import { ScoutView } from "./scout-view";
 import { SectionTabs } from "./tabs";
+import { CompetitionSwitch } from "../../competition-switch";
 
 export const dynamic = "force-dynamic";
 
@@ -56,19 +58,21 @@ export default async function PlayerPage({ params, searchParams }: {
   const tab = first(q.tab);
   const section: Section = isSection(tab) ? tab : "overview";
 
-  const p = await db((tx) => getPlayer(tx, id));
+  const [p, competitions] = await db((tx) => Promise.all([getPlayer(tx, id, first(q.comp) ?? null), playerCompetitions(tx, id)]));
   if (!p) notFound();
   await recordProfileView(id);
-  const [attributes, profiles, evidence] = await db((tx) => Promise.all([getAttributes(tx), getProfiles(tx), getEvidence(tx, [id]).then((m) => m.get(id)!)]));
+  const comp = p.role == null ? null : p.competition_id;
+  const [attributes, profiles, evidence] = await db((tx) => Promise.all([getAttributes(tx), getProfiles(tx), getEvidence(tx, [id], comp).then((m) => m.get(id)!)]));
   const fitParam = first(q.fit);
   const profile = pickProfile(profiles, fitParam, p.role);
+  const compQuery = comp ? `comp=${comp}` : "";
   const back = <HStack><Button variant="ghost" size="sm" label="Back to search" href="/" icon={<Icon icon="chevronLeft" />} /></HStack>;
   const header = (
     <Card elevation="low">
       <PlayerHeader id={id} p={p}>
         <HStack gap={2} wrap="wrap">
-          {p.role != null && <Button variant="primary" label="Compare with another player" href={`/compare?a=${id}`} />}
-          <Button label="Scouting report" href={`/players/${id}/report/print${profile ? `?profile=${profile.id}` : ""}`} />
+          {p.role != null && <Button variant="primary" label="Compare with another player" href={`/compare?a=${id}&ca=${comp}`} />}
+          <Button label="Scouting report" href={`/players/${id}/report/print?${[profile && `profile=${profile.id}`, compQuery].filter(Boolean).join("&")}`} />
           {user.role === "scout" && <Button label="Add actions to a playlist" href={`/playlists/add?player=${id}`} />}
         </HStack>
         <PlayerActions playerId={id} />
@@ -92,7 +96,7 @@ export default async function PlayerPage({ params, searchParams }: {
   }
 
   const attrs = new Map(attributes.map((a) => [a.key, a]));
-  const href = (s: Section) => `/players/${id}?tab=${s}${fitParam ? `&fit=${fitParam}` : ""}`;
+  const href = (s: Section) => `/players/${id}?tab=${s}&${compQuery}${fitParam ? `&fit=${fitParam}` : ""}`;
   const plural = rolePlural(p.role);
 
   return (
@@ -100,10 +104,14 @@ export default async function PlayerPage({ params, searchParams }: {
       {back}
       {header}
 
+      <CompetitionSwitch current={p.competition_id} competitions={competitions}
+        href={(c) => `/players/${id}?tab=${section}&comp=${c}${fitParam ? `&fit=${fitParam}` : ""}`} />
+
       <SectionTabs value={section} tabs={SECTIONS.map((s) => ({ ...s, href: href(s.value) }))} />
 
       {section === "overview" && <Overview id={id} p={p} attrs={attrs} plural={plural}
-        fit={profile && <FitCard pick={{ action: `/players/${id}`, name: "fit", profiles }} profile={profile} attributes={attrs} evidence={evidence} peers={p.peers} role={p.role} />} />}
+        fit={profile && <FitCard pick={{ action: `/players/${id}`, name: "fit", profiles, keep: { comp } }} profile={profile} attributes={attrs}
+          evidence={evidence} peers={p.peers} role={p.role} competition={p.competition} />} />}
       {section === "scout" && <ReportSummary playerId={id} competitionId={p.competition_id} />}
       {section === "scout" && <ScoutView id={id} user={user} attributes={attributes} evidence={evidence} peers={p.peers} role={p.role} />}
       {section === "market" && <RiskAndMarket id={id} p={p} />}
@@ -143,7 +151,8 @@ async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; 
   const events = await db((tx) => tx<Ev[]>`
     select type, x::float8 as x, y::float8 as y, end_x::float8 as end_x, end_y::float8 as end_y, (extra ->> 'xg')::float8 as xg
     from events
-    where player_id = ${id} and x is not null and (
+    where player_id = ${id} and x is not null
+      and match_id in (select id from matches where competition_id = ${p.competition_id} and status = 'published') and (
       type in ('ball_recovery', 'shot')
       or (type = 'carry' and y >= 62 and end_y between 30 and 62 and end_x >= 80))`);
   const small = smallGroupNote(p.peers, p.role);
@@ -158,7 +167,7 @@ async function Overview({ id, p, attrs, plural, fit }: { id: string; p: Player; 
       <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4} align="start">
         <Card>
           <VStack gap={3}>
-            <Heading level={3}>Percentiles vs {p.peers} {plural}</Heading>
+            <Heading level={3}>Percentiles vs {p.peers} {plural} in {p.competition}</Heading>
             {grouped(keys).map(([g, ks], gi, all) => {
               const firstSlot = all.slice(0, gi).reduce((n, [, prev]) => n + prev.length, 0) + gi * GROUP_PAUSE_SLOTS;
               return (
@@ -206,17 +215,17 @@ async function SimilarPlayers({ id, p, plural }: { id: string; p: Player; plural
           and m.player_id <> me.player_id and m.style is not null
         join players p on p.id = m.player_id and p.visible_to_scouts
         ${latestTeam(tx)}
-        where me.player_id = ${id} and me.role = ${p.role}
+        where me.player_id = ${id} and me.role = ${p.role} and me.competition_id = ${p.competition_id}
         order by m.style <=> me.style
         limit 8`)
     : [];
   return (
     <VStack gap={3}>
-      <Heading level={2}>Similar {plural} · style match</Heading>
+      <Heading level={2}>Similar {plural} in {p.competition} · style match</Heading>
       {similar.length ? (
         <Grid columns={{ minWidth: 250, repeat: "fill" }} gap={3}>
           {similar.map((s) => (
-            <ClickableCard key={s.id} className="lift" label={s.display_name} href={`/players/${s.id}`} padding={3}>
+            <ClickableCard key={s.id} className="lift" label={s.display_name} href={`/players/${s.id}?comp=${p.competition_id}`} padding={3}>
               <HStack gap={3} vAlign="center">
                 <PlayerAvatar name={s.display_name} photo={s.photo_url} size={48} />
                 <StackItem size="fill">
@@ -237,7 +246,7 @@ async function SimilarPlayers({ id, p, plural }: { id: string; p: Player; plural
       )}
       {similar.length > 0 && (
         <HStack>
-          <Button label={`Compare with ${similar[0].display_name}`} href={`/compare?a=${id}&b=${similar[0].id}`} />
+          <Button label={`Compare with ${similar[0].display_name}`} href={`/compare?a=${id}&ca=${p.competition_id}&b=${similar[0].id}&cb=${p.competition_id}`} />
         </HStack>
       )}
     </VStack>

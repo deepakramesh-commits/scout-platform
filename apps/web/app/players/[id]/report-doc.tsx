@@ -25,17 +25,18 @@ import { StandoutQualities } from "./standouts";
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const GROUP_TITLE = { technical: "Technical", physical: "Physical", tactical: "Tactical", mental: "Mentality" } as const;
 
-export async function loadReport(id: string, profileId: string | null, viewer: string) {
+export async function loadReport(id: string, profileId: string | null, viewer: string, competitionId: string | null) {
   return db(async (tx) => {
-    const p = await getPlayer(tx, id);
+    const p = await getPlayer(tx, id, competitionId);
     if (!p) return null;
+    const comp = p.role == null ? null : p.competition_id;
     const [attributes, profiles, evidence, reports, [summary], [author], riskMarket] = await Promise.all([
       getAttributes(tx),
       getProfiles(tx),
-      getEvidence(tx, [id]).then((m) => m.get(id)!),
+      getEvidence(tx, [id], comp).then((m) => m.get(id)!),
       getReports(tx, id),
       tx<{ text: string; source: "template" | "claude" }[]>`
-        select text, source from player_summaries where player_id = ${id} order by created_at desc limit 1`,
+        select text, source from player_summaries where player_id = ${id} and competition_id = ${comp}`,
       tx<{ name: string | null; org: string | null }[]>`
         select u.display_name as name, o.name as org from app_users u left join orgs o on o.id = u.org_id where u.id = auth.uid()`,
       loadRiskMarket(tx, id, p.role == null ? { ...p, minutes: 0, competition_id: null } : p),
@@ -90,7 +91,8 @@ export function ScoutingReport({ data, tools, footnote }: { data: ReportData; to
             <Card><StandoutQualities p={p} attrs={attrs} plural={rolePlural(p.role)} /></Card>
           )}
 
-          {profile && <FitCard profile={profile} attributes={attrs} evidence={evidence} peers={p.role == null ? 0 : p.peers} role={p.role} />}
+          {profile && <FitCard profile={profile} attributes={attrs} evidence={evidence} peers={p.role == null ? 0 : p.peers} role={p.role}
+            competition={p.role == null ? null : p.competition} />}
 
           <Grid columns={{ minWidth: 300, repeat: "fit" }} gap={4} align="start">
             <Card>

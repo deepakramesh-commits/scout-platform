@@ -37,7 +37,7 @@ export function PlayerHeader({ id, p, size = 144, children }: {
             <HStack gap={3} wrap="wrap" vAlign="center">
               {p.team && <Text color="secondary">{flag(p.team)} {p.team}</Text>}
               {position && <Token label={ROLE_NAMES[position] ?? position} color="green" />}
-              {p.role != null && <Text color="secondary">{p.matches} {p.matches === 1 ? "match" : "matches"} · {p.minutes} minutes</Text>}
+              {p.role != null && <Text color="secondary">{p.matches} {p.matches === 1 ? "match" : "matches"} · {p.minutes} minutes in {p.competition}</Text>}
               <HStack gap={1} vAlign="center">
                 <Text color="secondary">{p.birth_year == null ? "Age not recorded" : `Age ${SEASON_YEAR - p.birth_year}`}</Text>
                 {p.birth_year != null && p.demo_fields.includes("birth_year") && <Demo />}

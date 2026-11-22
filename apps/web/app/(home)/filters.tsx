@@ -12,17 +12,21 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 
 type Option = { value: string; label: string };
 type Query = {
-  role: string | null; sort: string; minPct: number | null; name: string | null; minMinutes: number | null;
+  competition: string | null; role: string | null; sort: string; minPct: number | null; name: string | null; minMinutes: number | null;
   country: string | null; ageMin: number | null; ageMax: number | null; contractBy: ISODateString | null;
 };
 
 // A GET form: the URL stays the source of truth, so presets, links and the back button all agree with the filters.
-export function Filters({ roles, metrics, countries, initial }: { roles: Option[]; metrics: Option[]; countries: Option[]; initial: Query }) {
+export function Filters({ competitions, roles, metrics, countries, initial }: {
+  competitions: Option[]; roles: Option[]; metrics: Option[]; countries: Option[]; initial: Query;
+}) {
   const [q, setQ] = useState(initial);
   const set = <K extends keyof Query>(k: K) => (v: Query[K]) => setQ((s) => ({ ...s, [k]: v }));
   return (
     <Form action="/">
       <HStack gap={3} wrap="wrap" vAlign="end">
+        <Selector label="Competition" htmlName="competition" options={competitions} value={q.competition ?? undefined} onChange={set("competition")}
+          width={240} />
         <Selector label="Position" htmlName="role" options={roles} value={q.role} onChange={set("role")} hasClear placeholder="Any" width={190} placement="below" />
         <Selector label="Rank by" htmlName="sort" options={metrics} value={q.sort} onChange={(v) => v && set("sort")(v)} hasSearch width={200} />
         <NumberInput label="Min percentile" htmlName="minPct" value={q.minPct} onChange={set("minPct")} min={0} max={100} isIntegerOnly hasClear width={140} />

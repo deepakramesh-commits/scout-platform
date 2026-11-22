@@ -81,7 +81,7 @@ METRICS = [
     Metric("saves", "Saves", lambda d: (d["type"] == "goalkeeper") & d["extra"].map(
         lambda e: str(e.get("gk_type", "")).startswith("shot_saved") or e.get("gk_type") in ("penalty_saved", "save"))),
     Metric("crosses_claimed", "Crosses claimed",
-           lambda d: (d["type"] == "goalkeeper") & _extra_is(d, "gk_type", {"collected"}) & d["outcome"].isin(["success", "collected_twice"])),
+           lambda d: (d["type"] == "goalkeeper") & _extra_is(d, "gk_type", {"collected"}) & d["outcome"].isin(["success", "claim", "collected_twice"])),
 ]
 
 

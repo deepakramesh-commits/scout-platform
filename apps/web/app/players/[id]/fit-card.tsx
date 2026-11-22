@@ -12,9 +12,9 @@ import { ProfilePicker } from "../../profile-picker";
 import { Count, Demo, PctBar, PRIORITY_COLOR } from "../../ui";
 
 /** `pick` shows the profile picker posting to that page; a printed or shared report leaves it out. */
-export function FitCard({ pick, profile, attributes, evidence, peers, role }: {
-  pick?: { action: string; name: string; profiles: Profile[] }; profile: Profile; attributes: Map<string, Attribute>;
-  evidence: PlayerEvidence; peers: number; role: string | null;
+export function FitCard({ pick, profile, attributes, evidence, peers, role, competition }: {
+  pick?: { action: string; name: string; profiles: Profile[]; keep?: Record<string, string | null> }; profile: Profile;
+  attributes: Map<string, Attribute>; evidence: PlayerEvidence; peers: number; role: string | null; competition: string | null;
 }) {
   const fit = fitScore(profile.items, evidence.evidence);
   const draft = draftLabel(profile);
@@ -26,7 +26,7 @@ export function FitCard({ pick, profile, attributes, evidence, peers, role }: {
           <Heading level={2}>Fit</Heading>
           <Text type="supporting">How well his evidence matches what a club needs.{pick && " Pick the requirement profile to judge him against."}</Text>
         </VStack>
-        {pick && <ProfilePicker key={profile.id} action={pick.action} name={pick.name} value={profile.id} label="Against profile"
+        {pick && <ProfilePicker key={profile.id} action={pick.action} name={pick.name} value={profile.id} label="Against profile" keep={pick.keep}
           options={pick.profiles.map((p) => ({ value: p.id, label: p.name, description: p.club ?? undefined }))} />}
         <HStack gap={4} wrap="wrap" vAlign="center">
           {fit.score != null
@@ -69,7 +69,7 @@ export function FitCard({ pick, profile, attributes, evidence, peers, role }: {
           })}
         </VStack>
         <Text type="supporting">
-          Each bar is 0 to 100: the match percentile within the position, the physical test percentile among tested players and your organisation’s
+          Each bar is 0 to 100: the match percentile within the position{competition && ` in ${competition}`}, the physical test percentile among tested players and your organisation’s
           average scout rating × 10, averaged where more than one exists.{small && ` Match percentiles here are ${small}.`}
         </Text>
       </VStack>

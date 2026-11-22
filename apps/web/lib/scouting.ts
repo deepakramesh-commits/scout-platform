@@ -61,13 +61,14 @@ export const getTests = (q: Q, playerId: string) =>
     select test, label, value::float8 as value, unit, tested_at, verified, is_demo, pct
     from ranked order by label`;
 
-export async function getEvidence(q: Q, playerIds: string[]): Promise<Map<string, PlayerEvidence>> {
+/** Match evidence comes from one competition: percentiles are ranked within it and never pooled. */
+export async function getEvidence(q: Q, playerIds: string[], competitionId: string | null): Promise<Map<string, PlayerEvidence>> {
   const out = new Map<string, PlayerEvidence>(playerIds.map((id) => [id, { evidence: {}, demo: new Set() }]));
   if (!playerIds.length) return out;
   const [main, tests, scouts] = await Promise.all([
     q<{ player_id: string; attr_percentiles: Record<string, number> }[]>`
       select distinct on (player_id) player_id, attr_percentiles
-      from player_season_metrics where player_id = any(${playerIds}::uuid[])
+      from player_season_metrics where player_id = any(${playerIds}::uuid[]) and competition_id = ${competitionId}
       order by player_id, minutes desc`,
     q<{ player_id: string; attribute: string; pct: number; is_demo: boolean }[]>`
       with ${rankedTests(q, playerIds)}

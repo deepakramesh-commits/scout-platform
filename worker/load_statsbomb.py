@@ -122,6 +122,16 @@ def event_rows(match_id, team_ids, events):
         )
 
 
+def set_primary_positions(cur, player_ids):
+    """A player's position is where he played most minutes in every competition we hold, not only the one just loaded."""
+    cur.execute("""
+        update players p set primary_position = r.position from (
+          select distinct on (player_id) player_id, position from lineups
+          where player_id = any(%s) and position is not null
+          group by player_id, position order by player_id, sum(minutes_played) desc, position) r
+        where r.player_id = p.id""", (list(player_ids),))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--competition-id", type=int, default=1267)
@@ -189,8 +199,7 @@ def main():
             "on conflict (id) do update set name=excluded.name, country=excluded.country", list(teams.values()))
         cur.executemany(
             "insert into players (id, display_name, nationality, primary_position) values (%s,%s,%s,%s) "
-            "on conflict (id) do update set display_name=excluded.display_name, nationality=excluded.nationality, "
-            "primary_position=excluded.primary_position",
+            "on conflict (id) do update set display_name=excluded.display_name, nationality=excluded.nationality",
             player_rows)
         cur.executemany(
             "insert into matches (id, competition_id, home_team_id, away_team_id, kickoff_at, status) values (%s,%s,%s,%s,%s,'published') "
@@ -211,6 +220,7 @@ def main():
             "insert into squad_members (team_id, player_id, shirt_number) "
             "select distinct on (team_id, player_id) team_id, player_id, shirt_number from lineups "
             "where match_id = any(%s) order by team_id, player_id on conflict do nothing", ([m[0] for m in matches],))
+        set_primary_positions(cur, known)
     for name, rows in [("competitions", competition), ("teams", teams), ("players", player_rows),
                        ("matches", matches), ("lineups", lineups), ("events", events)]:
         print(f"{name}: {len(rows)} upserted")

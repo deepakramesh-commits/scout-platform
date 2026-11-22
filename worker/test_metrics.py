@@ -204,3 +204,11 @@ def test_a_measure_most_of_the_position_never_records_gives_no_attribute_evidenc
     res = attribute_percentiles(out, {"dribbling": ["dribbles_completed"], "shot_stopping": ["saves"]})
     assert all("dribbling" not in r for r in res)
     assert [r["shot_stopping"] for r in res] == [33, 100, 67]
+
+
+def test_a_cross_claimed_logged_with_the_claimed_outcome_counts():
+    events = pd.DataFrame([
+        ev("a", "goalkeeper", outcome="claim", extra={"gk_type": "collected"}),
+        ev("a", "goalkeeper", outcome="claim", extra={"gk_type": "keeper_sweeper"}),
+    ])
+    assert compute_season_metrics(events, lineups([("a", "GK", 90)]), 0).iloc[0]["per90"]["crosses_claimed"] == 1

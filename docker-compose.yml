@@ -16,6 +16,7 @@ services:
       - ./supabase/migrations/20261121000400_phase5_data_engine.sql:/docker-entrypoint-initdb.d/24_phase5_data_engine.sql:ro
       - ./supabase/migrations/20261122000000_staff_scope.sql:/docker-entrypoint-initdb.d/25_staff_scope.sql:ro
       - ./supabase/migrations/20261122000100_staff_reads.sql:/docker-entrypoint-initdb.d/26_staff_reads.sql:ro
+      - ./supabase/migrations/20261122000200_report_link_competition.sql:/docker-entrypoint-initdb.d/27_report_link_competition.sql:ro
       - dbdata:/var/lib/postgresql/data
 volumes:
   dbdata:

@@ -7,9 +7,9 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { db, requireScouting, type Q } from "@/lib/auth";
-import { label, ROLE_NAMES } from "@/lib/metrics";
+import { ROLE_NAMES } from "@/lib/metrics";
 import { currentMatches } from "@/lib/queries";
-import { describeSearch, newMatches } from "@/lib/search";
+import { newMatches } from "@/lib/search";
 import { ActionForm, Submit } from "../forms";
 import { PageHead, PlayerCell, when } from "../page-kit";
 import { Demo } from "../ui";
@@ -28,12 +28,12 @@ export default async function Searches() {
 async function SearchesPage(tx: Q) {
   const saved = await tx<Saved[]>`select id, name, query, seen_player_ids, checked_at, is_demo from saved_searches order by checked_at desc`;
   const alerts = await Promise.all(saved.map(async (s) => {
-    const { filters, ids } = await currentMatches(tx, s.query);
+    const { description, ids } = await currentMatches(tx, s.query);
     const fresh = newMatches(ids, s.seen_player_ids);
     const players = fresh.length
       ? await tx<P[]>`select id, display_name, id_verified, primary_position from players where id = any(${fresh}::uuid[]) order by display_name limit 50`
       : [];
-    return { ...s, description: describeSearch(filters, label), total: ids.length, fresh, players };
+    return { ...s, description, total: ids.length, fresh, players };
   }));
 
   return (

@@ -123,7 +123,7 @@ async function AddPage(tx: Q, q: Params) {
           </VStack>
           {events.length === 0 ? (
             <EmptyState isCompact title="No actions recorded for him"
-              description="Actions appear here once a match he plays in is logged. Open match data covers AFCON 2023." />
+              description="Actions appear here once a match he plays in is logged, in a competition your plan includes." />
           ) : (
             <List hasDividers density="compact" edge="flush">
               {events.map((e) => (

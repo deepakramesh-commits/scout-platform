@@ -12,6 +12,7 @@ import type { Player } from "./player";
 export function StandoutQualities({ p, attrs, plural }: { p: Player; attrs: Map<string, Attribute>; plural: string }) {
   const best = standouts(p.attr_percentiles);
   const small = smallGroupNote(p.peers, p.role);
+  const among = `${plural} in ${p.competition}`;
   return (
     <VStack gap={2}>
       <Heading level={2}>Standout qualities</Heading>
@@ -23,7 +24,7 @@ export function StandoutQualities({ p, attrs, plural }: { p: Player; attrs: Map<
               <VStack gap={0}>
                 <Heading level={2}><Count value={p.attr_percentiles[k]} /></Heading>
                 <Text weight="semibold">{a?.label ?? k}</Text>
-                <Text type="supporting">Percentile among {plural} · {a ? SOURCE_LABEL[a.source] : ""}</Text>
+                <Text type="supporting">Percentile among {among} · {a ? SOURCE_LABEL[a.source] : ""}</Text>
               </VStack>
             </Card>
           );
@@ -32,7 +33,7 @@ export function StandoutQualities({ p, attrs, plural }: { p: Player; attrs: Map<
           <Card variant="muted" padding={3}>
             <Text type="supporting">
               {Object.keys(p.attr_percentiles).length
-                ? `No attribute above the 85th percentile among ${plural}.`
+                ? `No attribute above the 85th percentile among ${among}.`
                 : "Not enough minutes to rank yet."}
             </Text>
           </Card>
