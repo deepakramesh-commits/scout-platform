@@ -12,7 +12,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { db } from "@/lib/auth";
 import { clock, exportDir, loadTool, matchPlayers } from "@/lib/engine";
 import { SPEC_BY_TYPE } from "@/lib/event-spec";
-import { qualityCheck, ruleFlags, type QcEvent, type Sample, type SheetEvent, type SheetLine } from "@/lib/qc";
+import { publishBlocker, qualityCheck, ruleFlags, type QcEvent, type Sample, type SheetEvent, type SheetLine } from "@/lib/qc";
 import { MatchHeader } from "../match-header";
 import { ActionButton, SampleForm } from "./controls";
 import { readSettings } from "./data";
@@ -61,6 +61,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
   const flags = ruleFlags(primary, match.periods, data.lineups, data.sheet);
   const live = sample ? qualityCheck(primary, review, sample, settings) : null;
   const latest = runs[0];
+  const blocker = publishBlocker(match.status, latest);
   const files = await exportFiles(id);
 
   const who = new Map(players.map((p) => [p.player_id, `${p.shirt_number ?? "?"} ${p.display_name}`]));
@@ -83,7 +84,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
   return (
     <VStack gap={5}>
       <MatchHeader match={match} tool="Quality check"
-        intro={`Rule flags first, then a second analyst logs a sample again. A match publishes when ${pct(settings.countAgreement)} of the sample's events agree: same type and player within ${settings.timeWindow} s, located within ${settings.locationTolerance} pitch units.`} />
+        intro={`Rule flags first, then a second analyst logs a sample again. A match in review publishes when the latest check finds no rule flags and ${pct(settings.countAgreement)} of the sample's events agree: same type and player within ${settings.timeWindow} s, located within ${settings.locationTolerance} pitch units.`} />
 
       <Card>
         <VStack gap={3}>
@@ -100,8 +101,8 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
           ) : canAct ? (
             <HStack gap={3} wrap="wrap" vAlign="start">
               <ActionButton matchId={id} kind="run" label="Run the quality check" isDisabled={!sample} why="Choose the sample window first" />
-              <ActionButton matchId={id} kind="publish" label="Publish" variant="primary" isDisabled={!latest?.passed}
-                why="The latest quality check must pass before the match can publish" />
+              <ActionButton matchId={id} kind="publish" label="Publish" variant="primary" isDisabled={blocker != null}
+                why={blocker ?? undefined} />
             </HStack>
           ) : <Text type="supporting">The reviewer runs the check and publishes.</Text>}
         </VStack>
@@ -163,7 +164,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
           <Text type="supporting">
             {flags.length === 0
               ? `No event breaks a rule (${primary.length} checked against the match sheet${match.periods.length ? " and the marked periods" : "; mark the periods to check playing time"}).`
-              : `${flags.length} of ${primary.length} events break a rule. Fix them in the event log before publishing.`}
+              : `${flags.length} of ${primary.length} events break a rule. Fix them in the event log, then run the quality check again before publishing.`}
           </Text>
         </VStack>
         {flags.length > 0 && (

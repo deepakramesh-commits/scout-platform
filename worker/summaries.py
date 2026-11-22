@@ -41,19 +41,27 @@ def nice(key: str) -> str:
     return "xT" if key == "xt" else "xG" if key == "xg" else key.removesuffix("_pct").replace("_", " ")
 
 
+def count(n: int, one: str, many: str | None = None) -> str:
+    return f"{n} {one if n == 1 else many or one + 's'}"
+
+
+def ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
 def template_summary(f: dict) -> str:
-    out = [f"{f['name']} played {f['minutes']} minutes in {f['matches']} matches at {f['competition']} as a {f['position']}."]
+    out = [f"{f['name']} played {count(f['minutes'], 'minute')} in {count(f['matches'], 'match', 'matches')} at {f['competition']} as a {f['position']}."]
     if f["standout_qualities"]:
         out.append(f"Standout qualities: {' and '.join(q.lower() for q in f['standout_qualities'])}.")
     if f["best_measures"]:
-        best = ", ".join(f"{nice(m['measure'])} ({m['percentile']}th percentile)" for m in f["best_measures"])
+        best = ", ".join(f"{nice(m['measure'])} ({ordinal(m['percentile'])} percentile)" for m in f["best_measures"])
         out.append(f"Best measures against other {f['position']} players: {best}.")
     else:
         out.append("He has not played enough minutes to be ranked yet.")
     if f["weakest_measures"]:
         out.append(f"Weakest: {', '.join(nice(m['measure']) for m in f['weakest_measures'])}.")
     if f["ranked_against"] and f["ranked_against"] < 10:
-        out.append(f"Rankings rest on only {f['ranked_against']} players in this position, so treat them as indicative.")
+        out.append(f"Rankings rest on only {count(f['ranked_against'], 'player')} in this position, so treat them as indicative.")
     return " ".join(out)
 
 

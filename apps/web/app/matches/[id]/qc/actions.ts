@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { db, requireMe, type Q } from "@/lib/auth";
-import { qualityCheck, ruleFlags, type Period, type QcEvent, type SheetEvent, type SheetLine } from "@/lib/qc";
+import { checkOutcome, qualityCheck, ruleFlags, type Period, type QcEvent, type SheetEvent, type SheetLine } from "@/lib/qc";
 import { readSettings } from "./data";
 
-export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
+export type ActionResult = { ok: true; message: string; warning?: boolean } | { ok: false; error: string };
 
 const fail = (e: unknown): ActionResult => ({ ok: false, error: e instanceof Error ? e.message : String(e) });
 const assigned = async (tx: Q, matchId: string, task: string) =>
@@ -43,7 +43,7 @@ const mainTagger = (events: { tagger_id: string | null }[]) => {
 
 export async function runCheck(matchId: string): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
-  let message = "";
+  let outcome = { publishable: false, message: "" };
   try {
     await db(async (tx) => {
       if (!(await assigned(tx, matchId, "reviewer"))) throw new Error("Only the match's reviewer or an admin runs the quality check.");
@@ -62,14 +62,14 @@ export async function runCheck(matchId: string): Promise<ActionResult> {
         insert into qc_runs (match_id, analyst_id, reviewer_id, primary_count, review_count, agreed, agreement, passed, flags, details)
         values (${matchId}, ${mainTagger(primary)}, ${mainTagger(review)}, ${r.primaryCount}, ${r.reviewCount}, ${r.agreed}, ${r.agreement},
                 ${r.passed}, ${flags}, ${tx.json({ byType: r.byType, pairs: r.pairs, sample, settings })})`;
-      message = `${Math.round(r.agreement * 100)}% agreement: ${r.passed ? "passed" : "not enough to publish"}.`;
+      outcome = checkOutcome(r, flags);
     });
   } catch (e) { return fail(e); }
   revalidatePath(`/matches/${matchId}/qc`);
-  return { ok: true, message };
+  return { ok: true, message: outcome.message, warning: !outcome.publishable };
 }
 
-/** Publishing goes through app.publish_match, which refuses unless the latest run passed, and queues the metrics job. */
+/** Publishing goes through app.publish_match, which refuses unless the match is in review and the latest run passed with no rule flags. */
 export async function publish(matchId: string): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
   try { await db((tx) => tx`select app.publish_match(${matchId})`); } catch (e) { return fail(e); }

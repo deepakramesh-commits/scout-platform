@@ -2,7 +2,8 @@ import { rm } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { db } from "@/lib/auth";
 import { apiUser, json } from "@/lib/engine";
-import { appendChunk, CHUNK_BYTES, finishUpload, receivedBytes, VIDEO_TYPES, videoDir } from "@/lib/video";
+import { CHUNK_BYTES } from "@/lib/upload-chunk";
+import { appendChunk, finishUpload, receivedBytes, VIDEO_TYPES, videoDir } from "@/lib/video";
 
 type Ctx = { params: Promise<{ match: string }> };
 

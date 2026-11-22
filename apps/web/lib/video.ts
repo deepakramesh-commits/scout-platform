@@ -6,7 +6,6 @@ import { join, resolve } from "node:path";
 
 export type Provider = "local" | "mux";
 export const provider = (): Provider => (process.env.MUX_TOKEN_ID && process.env.MUX_TOKEN_SECRET ? "mux" : "local");
-export const CHUNK_BYTES = 8 * 1024 * 1024;
 export const CLIP_BEFORE = 5;
 export const CLIP_AFTER = 8;
 export const VIDEO_TYPES: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };

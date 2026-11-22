@@ -20,14 +20,18 @@ export async function createPlaylist(form: FormData): Promise<string | void> {
 
 export async function renamePlaylist(form: FormData): Promise<string | void> {
   await requireMe(PLAYLIST_ROLES);
+  const list = str(form, "list");
+  if (!UUID.test(list)) return "Choose a playlist.";
   if (name(form).length < 2) return "Give the playlist a name.";
-  await db((tx) => tx`update playlists set name = ${name(form)} where id = ${str(form, "list")}`);
+  await db((tx) => tx`update playlists set name = ${name(form)} where id = ${list}`);
   refresh();
 }
 
 export async function deletePlaylist(form: FormData): Promise<string | void> {
   await requireMe(PLAYLIST_ROLES);
-  await db((tx) => tx`delete from playlists where id = ${str(form, "list")}`);
+  const list = str(form, "list");
+  if (!UUID.test(list)) return "Choose a playlist.";
+  await db((tx) => tx`delete from playlists where id = ${list}`);
   redirect("/playlists");
 }
 
@@ -46,17 +50,26 @@ export async function addToPlaylist(form: FormData): Promise<string | void> {
   refresh();
 }
 
+const item = (form: FormData) => {
+  const [list, event] = [str(form, "list"), str(form, "event")];
+  return !UUID.test(list) ? "Choose a playlist." : !UUID.test(event) ? "Choose an action." : { list, event };
+};
+
 export async function removeFromPlaylist(form: FormData): Promise<string | void> {
   await requireMe(PLAYLIST_ROLES);
-  await db((tx) => tx`delete from playlist_items where playlist_id = ${str(form, "list")} and event_id = ${str(form, "event")}`);
+  const it = item(form);
+  if (typeof it === "string") return it;
+  await db((tx) => tx`delete from playlist_items where playlist_id = ${it.list} and event_id = ${it.event}`);
   refresh();
 }
 
 export async function notePlaylistItem(form: FormData): Promise<string | void> {
   await requireMe(PLAYLIST_ROLES);
+  const it = item(form);
+  if (typeof it === "string") return it;
   await db((tx) => tx`
     update playlist_items set note = ${str(form, "note").slice(0, 1000)}
-    where playlist_id = ${str(form, "list")} and event_id = ${str(form, "event")}`);
+    where playlist_id = ${it.list} and event_id = ${it.event}`);
   refresh();
 }
 

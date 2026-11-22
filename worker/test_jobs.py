@@ -20,6 +20,18 @@ def test_template_summary_states_only_the_facts_and_flags_small_groups():
     assert "pass accuracy" in text and "only 4 players" in text
 
 
+def test_template_summary_counts_read_as_english_for_one():
+    f = {"name": "A", "competition": "Cup", "position": "AM", "minutes": 1, "matches": 1, "ranked_against": 1,
+         "standout_qualities": [], "birth_year": 2004, "birth_year_is_demo": True,
+         "best_measures": [{"measure": "xt", "percentile": p, "value": 0.1} for p in (1, 2, 3)]
+         + [{"measure": "xg", "percentile": p, "value": 0.1} for p in (11, 12, 13, 21, 22, 23)],
+         "weakest_measures": []}
+    text = template_summary(f)
+    assert "1 minute in 1 match at" in text and "only 1 player in" in text
+    for p in ("1st", "2nd", "3rd", "11th", "12th", "13th", "21st", "22nd", "23rd"):
+        assert f"({p} percentile)" in text
+
+
 @pytest.fixture
 def conn():
     try:

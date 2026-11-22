@@ -19,8 +19,7 @@ import { uuid } from "@/lib/sheet-sync";
 type SquadRow = { player_id: string; name: string; shirt_number: number | null; position: string | null };
 export type SheetTeam = { id: string; name: string; squad: SquadRow[]; stored: Sheet | null };
 
-/** One team on this phone: the sheet, how many edits it has had, and which edit was last sent and is queued to send. */
-type Local = { sheet: Sheet; version: number; sent: number; queued: number; sentAt: string | null; rejected: string | null };
+type Local = { sheet: Sheet; version: number; sentVersion: number; queuedVersion: number; sentAt: string | null; rejected: string | null };
 type Store = Record<string, Local>;
 
 const KIND_LABEL: Record<Kind, string> = { substitution: "Substitution", goal: "Goal", own_goal: "Own goal", yellow_card: "Yellow card", red_card: "Red card" };
@@ -34,7 +33,7 @@ const emptySheet = (): Sheet => ({ lineup: [], entries: [], length: 90 });
 
 export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: SheetTeam[]; sentAt: string | null }) {
   const initial = useMemo<Store>(() => Object.fromEntries(teams.map((t) => [t.id, {
-    sheet: t.stored ?? emptySheet(), version: 0, sent: 0, queued: 0, sentAt: t.stored ? sentAt : null, rejected: null,
+    sheet: t.stored ?? emptySheet(), version: 0, sentVersion: 0, queuedVersion: 0, sentAt: t.stored ? sentAt : null, rejected: null,
   }])), [teams, sentAt]);
   const [store, setStore] = useState<Store>(initial);
   const storeRef = useRef(store);
@@ -44,7 +43,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
 
   // The phone's copy wins over the server's while it holds changes the server has not confirmed.
   useEffect(() => {
-    const unsent = Object.entries(readStore(matchId)).filter(([id, l]) => id in storeRef.current && (l.version > l.sent || l.rejected));
+    const unsent = Object.entries(readStore(matchId)).filter(([id, l]) => id in storeRef.current && (l.version > l.sentVersion || l.rejected));
     storeRef.current = { ...storeRef.current, ...Object.fromEntries(unsent) };
     setStore(storeRef.current);
     setOnline(navigator.onLine);
@@ -63,7 +62,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
   const retry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const flush = useCallback(async () => {
     if (!navigator.onLine || flushing.current) return;
-    const due = Object.entries(storeRef.current).filter(([, l]) => l.queued > l.sent);
+    const due = Object.entries(storeRef.current).filter(([, l]) => l.queuedVersion > l.sentVersion);
     if (!due.length) return;
     flushing.current = true;
     setSending(true);
@@ -76,9 +75,9 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
           signal: AbortSignal.timeout(15000),
         });
         const body = (await res.json().catch(() => ({}))) as { errors?: SheetError[]; error?: string; sent_at?: string };
-        if (res.ok) update(id, (cur) => ({ ...cur, sent: l.queued, sentAt: body.sent_at ?? new Date().toISOString() }));
+        if (res.ok) update(id, (cur) => ({ ...cur, sentVersion: l.queuedVersion, sentAt: body.sent_at ?? new Date().toISOString() }));
         else if (res.status === 422 || res.status === 403) {
-          update(id, (cur) => ({ ...cur, queued: cur.sent, rejected: body.errors?.map((e) => e.message).join("; ") ?? body.error ?? "refused" }));
+          update(id, (cur) => ({ ...cur, queuedVersion: cur.sentVersion, rejected: body.errors?.map((e) => e.message).join("; ") ?? body.error ?? "refused" }));
         } else if (res.status === 401) {
           update(id, (cur) => ({ ...cur, rejected: "Sign in again to send; the sheet stays on this phone." }));
         } else unsent = true;
@@ -137,9 +136,9 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
   const named = sheet.lineup.map((l) => ({ value: l.player_id, label: `${l.shirt_number ?? "?"} · ${name(l.player_id)}` }));
   const bench = sheet.lineup.filter((l) => !l.started).map((l) => ({ value: l.player_id, label: `${l.shirt_number ?? "?"} · ${name(l.player_id)}` }));
 
-  const send = () => { update(teamId, (l) => ({ ...l, queued: l.version || 1 })); void flush(); };
-  const pending = local.queued > local.sent;
-  const changed = local.version > local.sent;
+  const send = () => { update(teamId, (l) => ({ ...l, queuedVersion: l.version || 1 })); void flush(); };
+  const pending = local.queuedVersion > local.sentVersion;
+  const changed = local.version > local.sentVersion;
   const state = local.rejected
     ? { status: "error" as const, title: "Not accepted", description: local.rejected }
     : pending

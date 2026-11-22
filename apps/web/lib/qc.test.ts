@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { qualityCheck, ruleFlags, type QcEvent } from "./qc.ts";
+import { checkOutcome, publishBlocker, qualityCheck, ruleFlags, type QcEvent } from "./qc.ts";
 
 const ev = (id: string, o: Partial<QcEvent>): QcEvent => ({
   id, player_id: "a", team_id: "H", period: 1, video_seconds: 100, type: "pass", x: 50, y: 40, ...o,
@@ -74,4 +74,21 @@ test("an event is paired once, to the nearest in time", () => {
 
 test("an empty sample cannot pass", () => {
   assert.equal(qualityCheck([], [], sample, settings).passed, false);
+});
+
+test("a check that does not pass, or passes with rule flags, is a warning that keeps its counts", () => {
+  const r = { agreement: 1 / 3, agreed: 2, primaryCount: 6, reviewCount: 5, passed: false };
+  assert.deepEqual(checkOutcome(r, 0), { publishable: false, message: "33% agreement (2 of 6 events agree): not enough to publish." });
+  assert.deepEqual(checkOutcome({ ...r, agreement: 1, agreed: 6, reviewCount: 6, passed: true }, 1),
+    { publishable: false, message: "100% agreement (6 of 6 events agree): passed, but 1 rule flag must be fixed before publishing." });
+  assert.deepEqual(checkOutcome({ ...r, agreement: 1, agreed: 6, reviewCount: 6, passed: true }, 0),
+    { publishable: true, message: "100% agreement (6 of 6 events agree): passed." });
+});
+
+test("publishing waits for review, then a passing check without rule flags", () => {
+  assert.match(publishBlocker("tagging", { passed: true, flags: 0 })!, /send the match to review/);
+  assert.match(publishBlocker("review", undefined)!, /Run the quality check/);
+  assert.match(publishBlocker("review", { passed: false, flags: 0 })!, /must pass/);
+  assert.match(publishBlocker("review", { passed: true, flags: 2 })!, /Fix the 2 rule flags/);
+  assert.equal(publishBlocker("review", { passed: true, flags: 0 }), null);
 });

@@ -93,3 +93,22 @@ export function qualityCheck(primary: QcEvent[], review: QcEvent[], sample: Samp
   const agreement = denominator ? agreed / denominator : 0;
   return { primaryCount: a.length, reviewCount: b.length, agreed, agreement, passed: denominator > 0 && agreement >= s.countAgreement, byType, pairs };
 }
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** The banner after a check runs; a match is publishable only when the check passed with no rule flags. */
+export function checkOutcome(r: Pick<QcResult, "agreement" | "agreed" | "primaryCount" | "reviewCount" | "passed">, flags: number) {
+  const counts = `${Math.round(r.agreement * 100)}% agreement (${r.agreed} of ${Math.max(r.primaryCount, r.reviewCount)} events agree)`;
+  const verdict = !r.passed ? "not enough to publish"
+    : flags > 0 ? `passed, but ${plural(flags, "rule flag")} must be fixed before publishing` : "passed";
+  return { publishable: r.passed && flags === 0, message: `${counts}: ${verdict}.` };
+}
+
+/** Why the match cannot publish yet, or null. app.publish_match enforces the same rules. */
+export function publishBlocker(status: string, latest: { passed: boolean; flags: number } | undefined): string | null {
+  if (status !== "review") return "The analyst must send the match to review from the event log first";
+  if (!latest) return "Run the quality check first";
+  if (!latest.passed) return "The latest quality check must pass before the match can publish";
+  if (latest.flags > 0) return `Fix the ${plural(latest.flags, "rule flag")} in the event log, then run the quality check again`;
+  return null;
+}

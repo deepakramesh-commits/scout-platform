@@ -22,7 +22,7 @@ function useAction() {
   const [result, setResult] = useState<ActionResult | null>(null);
   const run = (f: () => Promise<ActionResult>) => start(async () => setResult(await f()));
   const banner = result && (result.ok
-    ? <Banner status="success" title={result.message} onDismiss={() => setResult(null)} />
+    ? <Banner status={result.warning ? "warning" : "success"} title={result.message} onDismiss={() => setResult(null)} />
     : <Banner status="error" title={result.error} onDismiss={() => setResult(null)} />);
   return { pending, run, banner };
 }

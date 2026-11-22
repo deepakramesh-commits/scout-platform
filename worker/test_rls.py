@@ -364,6 +364,30 @@ def test_a_match_is_published_only_through_the_quality_check(cur):
         cur.connection.rollback()
 
 
+@pytest.mark.parametrize("status, passed, flags, error", [
+    ("review", True, 0, None),
+    ("review", True, 2, "rule flags"),
+    ("review", False, 0, "has not passed"),
+    ("tagging", True, 0, "in review"),
+    ("published", True, 0, "in review"),
+])
+def test_the_reviewer_publishes_only_a_match_in_review_whose_latest_check_passed_without_flags(cur, status, passed, flags, error):
+    m = did("match", "demo")
+    cur.execute("update matches set status = %s where id = %s", (status, m))
+    cur.execute("""insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, run_at)
+                   values (%s, 6, 6, 6, 1, %s, %s, now() + interval '1 day')""", (m, passed, flags))
+    jobs = one(cur, "select count(*) from jobs where kind = 'compute_match_metrics'")
+    act_as(cur, "analyst2")
+    if error:
+        with pytest.raises(psycopg.errors.RaiseException, match=error):
+            cur.execute("select app.publish_match(%s)", (m,))
+        return
+    cur.execute("select app.publish_match(%s)", (m,))
+    cur.execute("reset role")
+    assert one(cur, "select status from matches where id = %s", m) == "published"
+    assert one(cur, "select count(*) from jobs where kind = 'compute_match_metrics'") == jobs + 1
+
+
 def test_a_tagger_lists_only_the_matches_assigned_to_him(cur):
     stranger = stranger_match(cur)
     cur.execute("select match_id from match_assignments where user_id = %s", (did("user", "analyst"),))

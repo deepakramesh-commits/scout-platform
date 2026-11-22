@@ -8,6 +8,7 @@ import { FileInput } from "@astryxdesign/core/FileInput";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { CHUNK_BYTES } from "@/lib/upload-chunk";
 
 type Phase =
   | { kind: "idle" }
@@ -16,7 +17,6 @@ type Phase =
   | { kind: "done" }
   | { kind: "failed"; message: string };
 
-const CHUNK = 8 * 1024 * 1024; // lib/video.ts CHUNK_BYTES; a multiple of 256 KiB, as Mux requires
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,7 +47,7 @@ async function uploadLocal(matchId: string, file: File, progress: (p: Phase) => 
   while (offset < file.size) {
     progress({ kind: "sending", sent: offset });
     try {
-      const res = await check(await fetch(`${base}?offset=${offset}`, { method: "PUT", body: file.slice(offset, offset + CHUNK) }));
+      const res = await check(await fetch(`${base}?offset=${offset}`, { method: "PUT", body: file.slice(offset, offset + CHUNK_BYTES) }));
       offset = ((await res.json()) as { received: number }).received;
     } catch (e) {
       if (e instanceof Refused) throw e;
@@ -71,7 +71,7 @@ async function uploadMux(matchId: string, file: File, progress: (p: Phase) => vo
   let offset = 0;
   while (offset < file.size) {
     progress({ kind: "sending", sent: offset });
-    const end = Math.min(offset + CHUNK, file.size);
+    const end = Math.min(offset + CHUNK_BYTES, file.size);
     try {
       const r = await fetch(url, { method: "PUT", headers: { "Content-Range": `bytes ${offset}-${end - 1}/${file.size}` }, body: file.slice(offset, end) });
       if (r.status !== 308 && !r.ok) throw new Error(`Mux answered ${r.status}`);
