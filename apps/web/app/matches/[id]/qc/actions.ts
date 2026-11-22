@@ -80,18 +80,10 @@ export async function publish(matchId: string): Promise<ActionResult> {
   return { ok: true, message: "Published. The metrics job is queued; profiles update when the worker has run." };
 }
 
-/**
- * Queues a StatsBomb JSON export for the worker. Needs app.request_export(uuid), which the phase 5 migration does not
- * have yet: the jobs table has no insert policy for users. Until it exists this reports that plainly.
- */
+/** Queues a StatsBomb JSON export for the worker through app.request_export, which only the reviewer or an admin may call. */
 export async function requestExport(matchId: string): Promise<ActionResult> {
-  await requireMe(["tagger", "admin", "coordinator"]);
-  try {
-    await db((tx) => tx`select app.request_export(${matchId})`);
-  } catch (e) {
-    if ((e as { code?: string }).code === "42883") return { ok: false, error: "Export is not enabled on this database yet (app.request_export is missing)." };
-    return fail(e);
-  }
+  await requireMe(["tagger", "admin"]);
+  try { await db((tx) => tx`select app.request_export(${matchId})`); } catch (e) { return fail(e); }
   revalidatePath(`/matches/${matchId}/qc`);
   return { ok: true, message: "Export queued. The files appear here once the worker has run." };
 }

@@ -296,3 +296,103 @@ def test_only_an_adult_player_his_guardian_or_an_admin_confirms_an_agent(cur):
     assert one(cur, "select app.owns_player(%s)", pid)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         cur.execute("select app.confirm_agent(%s, %s)", (did("org", "agency"), pid))
+
+
+MATCH_TABLES = {"matches", "lineups", "squad_members", "events", "imports", "qc_samples", "qc_runs"}
+MATCH_WRITES = {
+    "matches": "update matches set periods = periods where id = %(m)s",
+    "lineups": "insert into lineups (match_id, team_id, player_id) values (%(m)s, %(team)s, %(player)s)",
+    "squad_members": "update squad_members set shirt_number = shirt_number where team_id = %(team)s",
+    "events": "insert into events (match_id, team_id, period, video_seconds, type, source) values (%(m)s, %(team)s, 1, 0, 'pass', 'manual')",
+    "imports": "insert into imports (match_id, format, filename, rows_imported, created_by) values (%(m)s, 'csv', 'x.csv', 0, auth.uid())",
+    "qc_samples": "insert into qc_samples (match_id, period, start_seconds, end_seconds) values (%(m)s, 1, 0, 60)",
+    "qc_runs": "insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags) "
+               "values (%(m)s, 1, 1, 1, 1, true, 0)",
+}
+
+
+def stranger_match(cur):
+    """A match in the demo league, between two new teams, that nobody is assigned to."""
+    m, home, away = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    cur.execute("insert into teams (id, name, country) values (%s, 'Stranger home', 'Zambia'), (%s, 'Stranger away', 'Zambia')", (home, away))
+    cur.execute("insert into matches (id, competition_id, home_team_id, away_team_id) values (%s, %s, %s, %s)",
+                (m, did("comp", "demo"), home, away))
+    cur.execute("insert into squad_members (team_id, player_id) values (%s, %s)", (home, did("demo-player", "away", 0)))
+    return m
+
+
+def writable(cur, key, m):
+    """The match tables `key` can change for match `m`, each write tried in its own savepoint."""
+    cur.execute("reset role")
+    cur.execute("update matches set status = 'tagging' where id = %s", (m,))
+    cur.execute("delete from qc_samples where match_id = %s", (m,))
+    team, player = cur.execute("select s.team_id, s.player_id from matches m join squad_members s on s.team_id = m.home_team_id "
+                               "where m.id = %s and s.player_id not in (select player_id from lineups where match_id = m.id) limit 1",
+                               (m,)).fetchone()
+    act_as(cur, key)
+    done = set()
+    for table, q in MATCH_WRITES.items():
+        cur.execute("savepoint w")
+        try:
+            cur.execute(q, {"m": m, "team": team, "player": player})
+            if cur.rowcount > 0:
+                done.add(table)
+        except psycopg.errors.InsufficientPrivilege:
+            pass
+        cur.execute("rollback to savepoint w")
+    return done
+
+
+@pytest.mark.parametrize("key, tables", [
+    ("analyst", {"matches", "events", "imports"}),
+    ("analyst2", {"qc_samples", "qc_runs"}),
+    ("coordinator", {"matches", "lineups", "squad_members"}),
+    ("admin", MATCH_TABLES),
+])
+def test_staff_change_match_data_only_for_the_task_they_are_assigned(cur, key, tables):
+    stranger = stranger_match(cur)
+    assert writable(cur, key, did("match", "demo")) == tables
+    assert writable(cur, key, stranger) == (MATCH_TABLES if key == "admin" else set())
+
+
+def test_a_match_is_published_only_through_the_quality_check(cur):
+    cur.execute("update matches set status = 'review' where id = %s", (did("match", "demo"),))
+    for key in ("analyst", "coordinator", "admin"):
+        act_as(cur, key)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cur.execute("update matches set status = 'published' where id = %s", (did("match", "demo"),))
+        cur.connection.rollback()
+
+
+def test_a_tagger_lists_only_the_matches_assigned_to_him(cur):
+    stranger = stranger_match(cur)
+    cur.execute("select match_id from match_assignments where user_id = %s", (did("user", "analyst"),))
+    mine = {r[0] for r in cur.fetchall()}
+    assert did("match", "demo") in mine
+    act_as(cur, "analyst")
+    cur.execute("select id from matches")
+    assert {r[0] for r in cur.fetchall()} == mine
+    assert one(cur, "select count(*) from events where match_id = %s", stranger) == 0
+
+
+def export_jobs(cur, m):
+    cur.execute("reset role")
+    return one(cur, "select count(*) from jobs where kind = 'export_match' and status = 'queued' and payload = %s::jsonb",
+               json.dumps({"match_id": str(m)}))
+
+
+@pytest.mark.parametrize("key", ["analyst2", "admin"])
+def test_the_reviewer_or_an_admin_queues_one_export(cur, key):
+    m = did("match", "demo")
+    cur.execute("delete from jobs where kind = 'export_match'")
+    act_as(cur, key)
+    cur.execute("select app.request_export(%s)", (m,))
+    cur.execute("select app.request_export(%s)", (m,))
+    assert export_jobs(cur, m) == 1
+
+
+@pytest.mark.parametrize("key", ["analyst", "coordinator", "scout"])
+def test_nobody_else_queues_an_export(cur, key):
+    act_as(cur, key)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("select app.request_export(%s)", (did("match", "demo"),))
