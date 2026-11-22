@@ -31,7 +31,7 @@ export async function getMatch(tx: Q, id: string): Promise<Match | null> {
 }
 
 /** What the user is assigned to do on a match. An admin may do everything. */
-export async function tasksFor(tx: Q, matchId: string, user: Me): Promise<Set<Task>> {
+async function tasksFor(tx: Q, matchId: string, user: Me): Promise<Set<Task>> {
   if (user.role === "admin") return new Set(["coordinator", "analyst", "reviewer"]);
   const rows = await tx<{ task: Task }[]>`select task from match_assignments where match_id = ${matchId} and user_id = ${user.id}`;
   return new Set(rows.map((r) => r.task));
