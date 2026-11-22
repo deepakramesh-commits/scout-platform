@@ -50,6 +50,34 @@ Check that the migrations apply to an empty database with `scripts/check-fresh-d
 Run the browser tests one file at a time with `npx playwright test e2e/<file>` in `apps/web`. Playwright exits at
 once when another `next dev` runs in `apps/web`, so stop that server first or set `E2E_BASE_URL=http://localhost:<port>`.
 
+## Deploy to Render
+
+`render.yaml` creates one Docker web service and one Postgres 16 database in Frankfurt. The service runs the web
+app and the job worker together (`scripts/start.sh`), because both use the files on its disk (`STORAGE_DIR=/var/data`)
+and a Render disk attaches to one service. Before each deploy Render runs `scripts/migrate.sh`, which applies the
+auth stub and any migration not yet recorded in `ops.schema_migrations`, so it is safe to re-run.
+
+1. Push this repository to GitHub, then in Render choose New > Blueprint and pick it.
+2. Load the data from your machine, using the database's External Database URL from the Render dashboard:
+
+   ```sh
+   export DATABASE_URL='<external url>?sslmode=require'
+   cd worker
+   uv run --python 3.12 python load_statsbomb.py --min-minutes 270
+   uv run --python 3.12 python metrics.py
+   ```
+
+3. Do not run `seed_demo.py` on a public URL: every demo login, admin included, uses the password above. Make
+   your own admin instead: sign up on the site as a scout, then promote that account (admin is not a sign-up type):
+
+   ```sh
+   psql "$DATABASE_URL" -c "update app_users set role = 'admin', active = true where email = 'you@example.com'"
+   ```
+
+   Sign-in has no rate limit yet (see `docs/build-log.md`).
+
+A service with a disk has no zero-downtime deploys, so each deploy is a short outage.
+
 ## Demo logins
 
 Every demo account uses the password `scout-demo`.

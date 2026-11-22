@@ -1,0 +1,12 @@
+.git
+.gstack
+.env
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/test-results
+**/playwright-report
+storage
+docs/*.pdf
