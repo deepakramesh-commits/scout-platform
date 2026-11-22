@@ -25,6 +25,7 @@ import { StandoutQualities } from "./standouts";
 import { PlayerHeader } from "./header";
 import { getPlayer, UUID, type Player, type PlayerWithoutData } from "./player";
 import { loadRiskMarket, MarketFacts, RiskAndMarket, TestsTable } from "./risk-market";
+import { ReportSummary } from "./report-summary";
 import { ScoutView } from "./scout-view";
 import { SectionTabs } from "./tabs";
 
@@ -68,6 +69,7 @@ export default async function PlayerPage({ params, searchParams }: {
         <HStack gap={2} wrap="wrap">
           {p.role != null && <Button variant="primary" label="Compare with another player" href={`/compare?a=${id}`} />}
           <Button label="Scouting report" href={`/players/${id}/report/print${profile ? `?profile=${profile.id}` : ""}`} />
+          {user.role === "scout" && <Button label="Add actions to a playlist" href={`/playlists/add?player=${id}`} />}
         </HStack>
         <PlayerActions playerId={id} />
       </PlayerHeader>
@@ -102,6 +104,7 @@ export default async function PlayerPage({ params, searchParams }: {
 
       {section === "overview" && <Overview id={id} p={p} attrs={attrs} plural={plural}
         fit={profile && <FitCard pick={{ action: `/players/${id}`, name: "fit", profiles }} profile={profile} attributes={attrs} evidence={evidence} peers={p.peers} role={p.role} />} />}
+      {section === "scout" && <ReportSummary playerId={id} competitionId={p.competition_id} />}
       {section === "scout" && <ScoutView id={id} user={user} attributes={attributes} evidence={evidence} peers={p.peers} role={p.role} />}
       {section === "market" && <RiskAndMarket id={id} p={p} />}
       {section === "similar" && <SimilarPlayers id={id} p={p} plural={plural} />}

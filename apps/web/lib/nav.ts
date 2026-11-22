@@ -13,7 +13,7 @@ const INTROS = item("Introductions", "/intros");
 const ACCOUNT = item("Account", "/account");
 
 export const NAV: Record<string, NavItem[]> = {
-  scout: [SEARCH, ROLES, COMPARE, PROFILES, SHORTLISTS, SHADOW, SEARCHES, item("Inbox", "/inbox"), COMPETITIONS],
+  scout: [SEARCH, ROLES, COMPARE, PROFILES, SHORTLISTS, SHADOW, item("Playlists", "/playlists"), SEARCHES, item("Inbox", "/inbox"), COMPETITIONS],
   agent: [SEARCH, ROLES, COMPARE, SHORTLISTS, item("Clients", "/agent"), INTROS, COMPETITIONS],
   federation: [SEARCH, COMPARE, item("Verify", "/verify"), COMPETITIONS],
   coach: [SEARCH, COMPARE, COMPETITIONS, ACCOUNT],
