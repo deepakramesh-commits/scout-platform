@@ -1,18 +1,24 @@
-# Render blueprint: one Docker web service (web app + job worker sharing a disk) and one Postgres database.
+# Render blueprint, free plan: one Docker web service (web app + job worker) and one Postgres database.
 # Frankfurt sits between the European buyers and the African clubs.
+#
+# Free-plan limits that matter here:
+# - No disk: uploaded video, ID documents and exports are lost on every restart or spin-down.
+# - The service sleeps after 15 idle minutes (the worker with it); the first visit after takes about a minute.
+# - 512 MB memory: publishing a match recomputes its whole competition, which needs about 700 MB for AFCON 2023.
+# - The free database is deleted 30 days after creation (plus a 14-day grace period to upgrade).
+# To go paid: set plan: starter, add the disk block below, and set the database plan to basic-256mb.
+#   disk:
+#     name: storage
+#     mountPath: /var/data
+#     sizeGB: 10
 services:
   - type: web
     name: scout
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter # a persistent disk needs a paid instance
+    plan: free
     region: frankfurt
     healthCheckPath: /login
-    preDeployCommand: /app/scripts/migrate.sh
-    disk:
-      name: storage
-      mountPath: /var/data # STORAGE_DIR: uploaded video, ID documents, exports
-      sizeGB: 10
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -20,7 +26,7 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
-      # Optional. Left empty, video stays on the disk and summaries use the template.
+      # Optional. Left empty, video stays on local storage and summaries use the template.
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: MUX_TOKEN_ID
@@ -36,6 +42,6 @@ services:
 
 databases:
   - name: scout-db
-    plan: basic-256mb
+    plan: free
     region: frankfurt
     postgresMajorVersion: "16"

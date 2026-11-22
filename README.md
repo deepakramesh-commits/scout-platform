@@ -52,10 +52,15 @@ once when another `next dev` runs in `apps/web`, so stop that server first or se
 
 ## Deploy to Render
 
-`render.yaml` creates one Docker web service and one Postgres 16 database in Frankfurt. The service runs the web
-app and the job worker together (`scripts/start.sh`), because both use the files on its disk (`STORAGE_DIR=/var/data`)
-and a Render disk attaches to one service. Before each deploy Render runs `scripts/migrate.sh`, which applies the
-auth stub and any migration not yet recorded in `ops.schema_migrations`, so it is safe to re-run.
+`render.yaml` creates one Docker web service and one Postgres 16 database in Frankfurt, both on the free plan. The
+service runs the web app and the job worker together (`scripts/start.sh`), because both use the files in
+`STORAGE_DIR=/var/data`, and a Render disk attaches to one service. On start it runs `scripts/migrate.sh`, which
+applies the auth stub and any migration not yet recorded in `ops.schema_migrations`, so it is safe to re-run.
+
+The free plan suits a demo for browsing the data. Its limits are listed at the top of `render.yaml`: files written
+to `/var/data` (uploaded video, ID documents, exports) vanish on every restart, the service sleeps when idle, 512 MB
+is too little to publish a match into a competition the size of AFCON, and the free database is deleted after 30
+days. The same file says how to switch to the paid plan.
 
 1. Push this repository to GitHub, then in Render choose New > Blueprint and pick it.
 2. Load the data from your machine, using the database's External Database URL from the Render dashboard:
@@ -76,7 +81,7 @@ auth stub and any migration not yet recorded in `ops.schema_migrations`, so it i
 
    Sign-in has no rate limit yet (see `docs/build-log.md`).
 
-A service with a disk has no zero-downtime deploys, so each deploy is a short outage.
+On the paid plan with a disk there are no zero-downtime deploys, so each deploy is a short outage.
 
 ## Demo logins
 

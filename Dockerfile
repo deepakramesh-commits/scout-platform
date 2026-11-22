@@ -30,5 +30,7 @@ ENV NODE_ENV=production \
     STORAGE_DIR=/var/data \
     DOCS_DIR=/app/docs \
     PYTHONUNBUFFERED=1
+# Without a mounted disk (Render free), files land here and are lost on every restart.
+RUN mkdir -p /var/data
 WORKDIR /app
 CMD ["/app/scripts/start.sh"]
