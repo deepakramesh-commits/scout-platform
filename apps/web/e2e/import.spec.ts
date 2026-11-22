@@ -52,3 +52,11 @@ test("a good CSV imports every row as imported events", async ({ page }) => {
   expect((await sql`select status from matches where id = ${m.id}`)[0].status).toBe("tagging");
   await expect(page.getByRole("cell", { name: "good.csv" })).toBeVisible();
 });
+
+test("a file over the size limit is refused before it is parsed", async ({ page }) => {
+  await signIn(page, "analyst@demo.scout");
+  const before = await count();
+  const res = await page.request.post(`/api/matches/${m.id}/import?filename=big.csv`, { data: Buffer.alloc(20 * 1024 * 1024 + 1, 65) });
+  expect(res.status()).toBe(413);
+  expect(await count()).toBe(before);
+});

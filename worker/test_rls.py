@@ -699,3 +699,16 @@ def test_a_change_racing_a_publish_cannot_land_in_the_published_match(change):
         admin.execute("delete from qc_runs where id = %s", (run,))
         admin.execute("update matches set status = %s where id = %s", (before, m))
         admin.close()
+
+
+@pytest.mark.parametrize("key, task", [("analyst", "analyst"), ("analyst2", "reviewer"), ("coordinator", "coordinator")])
+def test_a_deactivated_staff_member_loses_his_assigned_matches_at_once(cur, key, task):
+    m = did("match", "demo")
+    cur.execute("update app_users set active = false where id = %s", (did("user", key),))
+    assert writable(cur, key, m) == set()
+    act_as(cur, key)
+    assert not one(cur, "select app.assigned(%s, %s)", m, task)
+    assert one(cur, "select count(*) from matches where id = %s", m) == 0
+    assert one(cur, "select count(*) from app.assigned_matches()") == 0
+    assert one(cur, "select count(*) from app.coordinated_teams()") == 0
+    assert one(cur, "select count(*) from jobs") == 0

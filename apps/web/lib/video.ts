@@ -10,6 +10,8 @@ export const CLIP_BEFORE = 5;
 export const CLIP_AFTER = 8;
 export const VIDEO_TYPES: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };
 
+export const MAX_VIDEO_BYTES = 16 * 1024 ** 3;
+
 export const videoDir = () => join(resolve(process.env.STORAGE_DIR ?? join(process.cwd(), "../../storage")), "videos");
 const partPath = (dir: string, matchId: string) => join(dir, `${matchId}.part`);
 
@@ -18,15 +20,26 @@ export async function receivedBytes(dir: string, matchId: string): Promise<numbe
   return stat(partPath(dir, matchId)).then((s) => s.size, () => 0);
 }
 
-export type ChunkResult = { ok: true; received: number } | { ok: false; received: number };
+export type ChunkResult = { ok: true; received: number } | { ok: false; received: number; full?: true };
+
+// shortcut: an in-process lock, enough for one Node server; uploads spread over several servers need a file lock.
+const appending = new Map<string, Promise<unknown>>();
 
 /** Appends a chunk only when it starts where the file ends, so a resent chunk is never written twice. */
-export async function appendChunk(dir: string, matchId: string, offset: number, bytes: Uint8Array): Promise<ChunkResult> {
-  await mkdir(dir, { recursive: true });
-  const have = await receivedBytes(dir, matchId);
-  if (offset !== have) return { ok: false, received: have };
-  await appendFile(partPath(dir, matchId), bytes);
-  return { ok: true, received: have + bytes.length };
+export function appendChunk(dir: string, matchId: string, offset: number, bytes: Uint8Array): Promise<ChunkResult> {
+  const key = partPath(dir, matchId);
+  const run = (appending.get(key) ?? Promise.resolve()).then(async (): Promise<ChunkResult> => {
+    await mkdir(dir, { recursive: true });
+    const have = await receivedBytes(dir, matchId);
+    if (offset + bytes.length > MAX_VIDEO_BYTES) return { ok: false, received: have, full: true };
+    if (offset !== have) return { ok: false, received: have };
+    await appendFile(key, bytes);
+    return { ok: true, received: have + bytes.length };
+  });
+  const tail = run.catch(() => undefined);
+  appending.set(key, tail);
+  void tail.then(() => { if (appending.get(key) === tail) appending.delete(key); });
+  return run;
 }
 
 /** Closes an upload once every byte is in; returns the stored file name. */

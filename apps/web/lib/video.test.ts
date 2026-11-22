@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { appendChunk, finishUpload, muxPlaybackToken, receivedBytes, verifyMuxSignature } from "./video.ts";
+import { appendChunk, finishUpload, MAX_VIDEO_BYTES, muxPlaybackToken, receivedBytes, verifyMuxSignature } from "./video.ts";
 
 test("a dropped upload resumes from the bytes the server holds, and a resent chunk is not written twice", async () => {
   const dir = await mkdtemp(join(tmpdir(), "scout-video-"));
@@ -16,6 +16,19 @@ test("a dropped upload resumes from the bytes the server holds, and a resent chu
   assert.equal(await finishUpload(dir, "m", 5, ".exe"), null);
   assert.equal(await finishUpload(dir, "m", 5, ".mp4"), "m.mp4");
   assert.deepEqual([...await readFile(join(dir, "m.mp4"))], [1, 2, 3, 4, 5]);
+});
+
+test("two chunks sent at once for the same offset land once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scout-video-"));
+  const results = await Promise.all([1, 2, 3].map(() => appendChunk(dir, "m", 0, new Uint8Array([1, 2, 3]))));
+  assert.deepEqual(results.map((r) => r.ok).sort(), [false, false, true]);
+  assert.equal(await receivedBytes(dir, "m"), 3);
+});
+
+test("an upload stops at the size limit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scout-video-"));
+  assert.deepEqual(await appendChunk(dir, "m", MAX_VIDEO_BYTES, new Uint8Array([1])), { ok: false, received: 0, full: true });
+  assert.equal(await receivedBytes(dir, "m"), 0);
 });
 
 test("Mux webhook signatures are checked, including their age", () => {

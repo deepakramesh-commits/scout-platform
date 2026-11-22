@@ -21,6 +21,7 @@ services:
       - ./supabase/migrations/20261122000400_check_covers_current_data.sql:/docker-entrypoint-initdb.d/29_check_covers_current_data.sql:ro
       - ./supabase/migrations/20261122000500_blind_sample.sql:/docker-entrypoint-initdb.d/30_blind_sample.sql:ro
       - ./supabase/migrations/20261122000600_publish_race.sql:/docker-entrypoint-initdb.d/31_publish_race.sql:ro
+      - ./supabase/migrations/20261122000700_inactive_staff.sql:/docker-entrypoint-initdb.d/32_inactive_staff.sql:ro
       - dbdata:/var/lib/postgresql/data
 volumes:
   dbdata:

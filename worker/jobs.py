@@ -32,11 +32,16 @@ def compute_match_metrics(cur, payload):
 
 
 def write_report(cur, payload):
+    # a request queued before consent was withdrawn must not process his data (or send it to Claude) afterwards
+    cur.execute("select status = 'withdrawn' from players where id = %s", (payload["player_id"],))
+    row = cur.fetchone()
+    if row is None or row[0]:
+        return
     write_summary(cur, payload["player_id"], payload["competition_id"])
 
 
 def delete_personal_data(cur, payload):
-    """Consent withdrawn: identity, documents, market and test data and the exports naming him go; the match record of events stays."""
+    """Consent withdrawn: identity, documents, market and test data, summaries and the exports naming him go; the match record of events stays."""
     pid = payload["player_id"]
     for doc in (STORAGE / "private" / "ids").glob(f"{pid}-*"):
         doc.unlink()
@@ -44,7 +49,7 @@ def delete_personal_data(cur, payload):
     for (mid,) in cur.fetchall():
         shutil.rmtree(EXPORTS / str(mid), ignore_errors=True)
     cur.execute("update consents set guardian_contact = null where player_id = %s", (pid,))
-    for table in ("player_identity", "player_market", "physical_tests", "verifications"):
+    for table in ("player_identity", "player_market", "physical_tests", "verifications", "player_summaries"):
         cur.execute(f"delete from {table} where player_id = %s", (pid,))
     cur.execute("update players set birth_year = null, height_cm = null, preferred_foot = null, photo_url = null, "
                 "photo_credit = null, photo_source_url = null, demo_fields = '{}' where id = %s", (pid,))

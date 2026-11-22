@@ -4,12 +4,18 @@ import { db } from "@/lib/auth";
 import { apiUser, getMatch, json, matchPlayers } from "@/lib/engine";
 import { importCsv, importStatsBomb, type ImportResult, type MatchContext } from "@/lib/import";
 
+// A full match is a few MB of JSON; the whole file is held in memory while it is checked.
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+const tooBig = () => json({ errors: [{ row: 0, message: "the file is over 20 MB; a full match is a few MB" }], imported: 0 }, 413);
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await apiUser(["tagger", "admin"]);
   if (user instanceof Response) return user;
   const { id } = await params;
   const filename = (new URL(req.url).searchParams.get("filename") ?? "upload").slice(0, 200);
+  if (Number(req.headers.get("content-length")) > MAX_IMPORT_BYTES) return tooBig();
   const text = await req.text();
+  if (text.length > MAX_IMPORT_BYTES) return tooBig();
   const format = /\.json$/i.test(filename) || /^\s*\[/.test(text) ? "statsbomb_json" : "csv";
 
   return db(async (tx) => {

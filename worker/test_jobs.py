@@ -107,3 +107,21 @@ def test_withdrawal_deletes_the_id_documents_the_guardian_contact_and_his_match_
         assert cur.execute("select count(*) from consents where player_id = %s and guardian_contact is not null", (pid,)).fetchone()[0] == 0
     conn.rollback()
     conn.close()
+
+
+def test_withdrawal_deletes_his_summaries_and_no_summary_is_written_after_it():
+    try:
+        conn = psycopg.connect(DB, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    with conn.cursor() as cur:
+        pid, cid = cur.execute("select player_id, competition_id from player_season_metrics where style is not null limit 1").fetchone()
+        cur.execute("insert into player_summaries (player_id, competition_id, text, source) values (%s, %s, 'old', 'template') "
+                    "on conflict (player_id, competition_id) do update set text = excluded.text", (pid, cid))
+        cur.execute("update players set status = 'withdrawn' where id = %s", (pid,))
+        jobs.delete_personal_data(cur, {"player_id": str(pid)})
+        assert cur.execute("select count(*) from player_summaries where player_id = %s", (pid,)).fetchone()[0] == 0
+        jobs.write_report(cur, {"player_id": str(pid), "competition_id": str(cid)})
+        assert cur.execute("select count(*) from player_summaries where player_id = %s", (pid,)).fetchone()[0] == 0
+    conn.rollback()
+    conn.close()

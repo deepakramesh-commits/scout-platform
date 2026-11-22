@@ -3,7 +3,7 @@ import { extname, join } from "node:path";
 import { db } from "@/lib/auth";
 import { apiUser, json } from "@/lib/engine";
 import { CHUNK_BYTES } from "@/lib/upload-chunk";
-import { appendChunk, finishUpload, receivedBytes, VIDEO_TYPES, videoDir } from "@/lib/video";
+import { appendChunk, finishUpload, MAX_VIDEO_BYTES, receivedBytes, VIDEO_TYPES, videoDir } from "@/lib/video";
 
 type Ctx = { params: Promise<{ match: string }> };
 
@@ -32,6 +32,7 @@ export async function PUT(req: Request, ctx: Ctx) {
   const bytes = new Uint8Array(await req.arrayBuffer());
   if (bytes.length === 0 || bytes.length > CHUNK_BYTES) return json({ error: `a chunk is 1 to ${CHUNK_BYTES} bytes` }, 400);
   const r = await appendChunk(videoDir(), a.match, offset, bytes);
+  if (!r.ok && r.full) return json({ error: `a match video is at most ${MAX_VIDEO_BYTES / 1024 ** 3} GB`, received: r.received }, 413);
   return json({ received: r.received }, r.ok ? 200 : 409);
 }
 

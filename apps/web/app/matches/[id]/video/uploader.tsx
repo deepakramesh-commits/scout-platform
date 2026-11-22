@@ -29,7 +29,7 @@ const backOnline = () => new Promise<void>((resolve) => {
 class Refused extends Error {}
 
 async function check(res: Response): Promise<Response> {
-  if (res.status === 401 || res.status === 403 || res.status === 400) {
+  if ([400, 401, 403, 413].includes(res.status)) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Refused(body.error ?? `refused (${res.status})`);
   }
