@@ -1,4 +1,5 @@
 import type { Q } from "@/lib/auth";
+import { UUID } from "@/lib/input";
 import { latestTeam } from "@/lib/queries";
 import type { MarketPlayer } from "./risk-market";
 
@@ -16,6 +17,7 @@ export type Player = Header & MarketPlayer & {
 export type PlayerWithoutData = Header & { role: null };
 
 export async function getPlayer(tx: Q, id: string, competitionId: string | null = null): Promise<Player | PlayerWithoutData | null> {
+  if (competitionId && !UUID.test(competitionId)) competitionId = null; // a hand-edited ?comp= falls back to the most-played competition
   const [p] = await tx<(Player | PlayerWithoutData)[]>`
     select p.display_name, p.photo_url, p.photo_credit, p.photo_source_url, lt.team, p.primary_position, m.role, m.minutes, m.per90,
            m.percentiles, m.attr_percentiles, m.peers, m.style is not null as has_style,
