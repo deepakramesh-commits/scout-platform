@@ -14,6 +14,7 @@ No paid service is needed to run it.
 docker compose up -d
 
 # 2. load StatsBomb open data (AFCON 2023). Idempotent. A tournament gets a lower minutes threshold.
+#    Needs network: it downloads the open data from GitHub (about 2 minutes).
 cd worker
 uv run --python 3.12 python load_statsbomb.py --min-minutes 270
 
@@ -24,18 +25,30 @@ uv run --python 3.12 python metrics.py
 uv run --python 3.12 python seed_demo.py
 uv run --python 3.12 pytest
 
-# 5. the worker: takes jobs (metrics on publish, report summaries, consent deletions, exports)
+# 5. the worker: takes jobs (metrics on publish, report summaries, consent deletions, exports).
+#    `jobs.py --once` drains the queue and exits instead.
 uv run --python 3.12 python jobs.py &
 
 # 6. web app on http://localhost:3007
 cd ../apps/web
-npm install
+npm ci
 npm test
 npm run dev -- -p 3007
 ```
 
+To run the production build instead of the dev server, set a session secret. Without one, `lib/auth.ts` throws on
+every request that reads the session.
+
+```sh
+npm run build
+SESSION_SECRET=$(openssl rand -hex 32) npm start -- -p 3007
+```
+
+Every script reads `DATABASE_URL` and falls back to `postgres://postgres:postgres@localhost:54330/postgres`.
 Remove every demo row and value with `uv run --python 3.12 python seed_demo.py --remove`.
 Check that the migrations apply to an empty database with `scripts/check-fresh-db.sh`.
+Run the browser tests one file at a time with `npx playwright test e2e/<file>` in `apps/web`. Playwright exits at
+once when another `next dev` runs in `apps/web`, so stop that server first or set `E2E_BASE_URL=http://localhost:<port>`.
 
 ## Demo logins
 
