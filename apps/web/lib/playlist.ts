@@ -1,11 +1,10 @@
-// Clips and playlists. A clip is the match video around one event; there is no clip table.
+// A clip is the match video around one event; there is no clip table.
 // Relative `.ts` imports only: node --test loads this.
 import { SPEC_BY_TYPE } from "./event-spec.ts";
 import { CLIP_AFTER, CLIP_BEFORE } from "./video.ts";
 
 export type ClipWindow = { start: number; end: number };
 
-/** Seconds of video a clip plays: from 5 s before the event to 8 s after, never before the start of the video. */
 export const clipWindow = (videoSeconds: number): ClipWindow =>
   ({ start: Math.max(0, videoSeconds - CLIP_BEFORE), end: videoSeconds + CLIP_AFTER });
 

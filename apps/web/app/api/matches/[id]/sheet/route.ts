@@ -1,5 +1,4 @@
-// One team's match sheet from the coordinator's phone. The phone sends the whole sheet each time with ids it made,
-// so a resend after a dropped connection converges on the same rows instead of adding them twice.
+// The phone resends the whole sheet with ids it made, so a retry converges on the same rows instead of adding them twice.
 import { db } from "@/lib/auth";
 import { apiUser, getMatch, json } from "@/lib/engine";
 import { minutesPlayed, validateSheet } from "@/lib/match-sheet";

@@ -1,5 +1,4 @@
-// Mux calls this when an uploaded match video is ready. No user is signed in, so it writes with the service
-// connection, and only after the signature proves the call came from Mux.
+// Mux calls this with no user signed in, so it writes with the service connection once the signature checks out.
 import { serviceSql } from "@/lib/db";
 import { verifyMuxSignature } from "@/lib/video";
 

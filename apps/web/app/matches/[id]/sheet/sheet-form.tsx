@@ -83,7 +83,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
           update(id, (cur) => ({ ...cur, rejected: "Sign in again to send; the sheet stays on this phone." }));
         } else unsent = true;
       } catch {
-        unsent = true; // connection dropped mid-send: the sheet stays queued
+        unsent = true;
       }
     }
     flushing.current = false;
@@ -101,7 +101,6 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, [flush]);
 
-  // Cache this page and the files it loaded, so it opens with no connection next time.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js", { scope: "/matches/" }).then(() => navigator.serviceWorker.ready).then((reg) => {

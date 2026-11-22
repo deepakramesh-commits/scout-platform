@@ -20,7 +20,6 @@ const CHUNK = 8 * 1024 * 1024; // lib/video.ts CHUNK_BYTES; a multiple of 256 Ki
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Waits for the connection after a failed request: on the online event, or after a few seconds to try again. */
 const backOnline = () => new Promise<void>((resolve) => {
   const done = () => { window.removeEventListener("online", done); resolve(); };
   window.addEventListener("online", done);
@@ -37,7 +36,6 @@ async function check(res: Response): Promise<Response> {
   return res;
 }
 
-/** Local storage: ask how much the server holds, send the rest chunk by chunk, resuming after any failure. */
 async function uploadLocal(matchId: string, file: File, progress: (p: Phase) => void) {
   const base = `/api/video/${matchId}/upload`;
   const fingerprint = `${file.name}|${file.size}|${file.lastModified}`;

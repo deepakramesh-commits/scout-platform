@@ -421,7 +421,6 @@ def test_a_tagger_sees_only_the_squads_of_his_assigned_matches_never_withdrawn(c
 
 
 def qc_rows(cur, m):
-    """A review event, a QC run of nobody's, and a QC run credited to the analyst, all on match `m`."""
     cur.execute("reset role")
     team = one(cur, "select home_team_id from matches where id = %s", m)
     cur.execute("insert into review_events (match_id, team_id, period, video_seconds, type, source) values (%s, %s, 1, 0, 'pass', 'manual')", (m, team))

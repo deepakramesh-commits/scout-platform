@@ -24,7 +24,6 @@ async function requestSummary(form: FormData): Promise<string | void> {
   await db((tx) => tx`select app.request_summary(${player}, ${competition})`);
 }
 
-/** The worker's short summary of a player's numbers in one competition, and the button that asks for a new one. */
 export async function ReportSummary({ playerId, competitionId }: { playerId: string; competitionId: string }) {
   const [s] = await db((tx) => tx<Summary[]>`
     select text, source, model, created_at from player_summaries where player_id = ${playerId} and competition_id = ${competitionId}`);

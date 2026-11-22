@@ -1,4 +1,4 @@
-// HTTP Range for streaming match video, so the browser's player can seek. Pure, so `node --test` runs it.
+// Pure, so `node --test` runs it.
 
 export type ByteRange = { start: number; end: number };
 

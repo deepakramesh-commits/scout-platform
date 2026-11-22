@@ -11,7 +11,6 @@ const fail = (e: unknown): ActionResult => ({ ok: false, error: e instanceof Err
 const assigned = async (tx: Q, matchId: string, task: string) =>
   (await tx<{ ok: boolean }[]>`select app.assigned(${matchId}, ${task}) as ok`)[0].ok;
 
-/** The window the second analyst logs again: a period, a start in the video, and a length in minutes. */
 export async function saveSample(matchId: string, sample: { period: number; start: number; minutes: number }): Promise<ActionResult> {
   const user = await requireMe(["tagger", "admin"]);
   const { period, start, minutes } = sample;
@@ -36,14 +35,12 @@ const qcEvents = (tx: Q, table: "events" | "review_events", matchId: string) => 
   select id, player_id, team_id, period, video_seconds::float8 as video_seconds, type, x::float8 as x, y::float8 as y, tagger_id
   from ${tx(table)} where match_id = ${matchId}`;
 
-/** The person who logged most of a set of events. */
 const mainTagger = (events: { tagger_id: string | null }[]) => {
   const n = new Map<string, number>();
   for (const e of events) if (e.tagger_id) n.set(e.tagger_id, (n.get(e.tagger_id) ?? 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 };
 
-/** Compares the two analysts on the sample, with the thresholds in settings, and stores the run. */
 export async function runCheck(matchId: string): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
   let message = "";

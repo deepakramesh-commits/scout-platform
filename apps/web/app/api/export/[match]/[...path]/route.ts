@@ -1,4 +1,3 @@
-// Serves the StatsBomb JSON files the worker wrote for a match. Staff only, and only for a match the user can see.
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { db } from "@/lib/auth";

@@ -85,7 +85,6 @@ export function LogTool(props: {
     }
   }, [matchId, mode, status]);
 
-  // A save that failed for want of a connection goes again as soon as the connection returns.
   useEffect(() => {
     const retry = () => rows.filter((r) => r.state === "failed" && r.error?.startsWith("no connection")).forEach((r) => void save(r));
     window.addEventListener("online", retry);
@@ -152,7 +151,6 @@ export function LogTool(props: {
     setNotice("Editing: change what is wrong, then click the pitch again or press Enter to save.");
   };
 
-  // Keyboard: digits type a shirt number, letters pick the event type; see the key map on screen.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const el = ev.target as HTMLElement | null;

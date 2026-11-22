@@ -1,5 +1,3 @@
-// Resumable local upload. HEAD answers how many bytes are already here; PUT appends a chunk at its offset (a resent
-// chunk is never written twice); POST closes the upload and records the file on the match; DELETE drops a partial one.
 import { rm } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { db } from "@/lib/auth";
@@ -8,7 +6,6 @@ import { appendChunk, CHUNK_BYTES, finishUpload, receivedBytes, VIDEO_TYPES, vid
 
 type Ctx = { params: Promise<{ match: string }> };
 
-/** The coordinator of this match (or an admin) may upload; anyone else gets a status, never a redirect. */
 async function allowed({ params }: Ctx): Promise<{ match: string; userId: string } | Response> {
   const user = await apiUser(["coordinator", "admin"]);
   if (user instanceof Response) return user;

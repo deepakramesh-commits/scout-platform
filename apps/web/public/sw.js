@@ -1,4 +1,3 @@
-// Lets the match sheet open on a phone with no connection. Registered only by the sheet page.
 // Network first, so a connected phone always gets the current page; the cache answers only when the network fails.
 const CACHE = "scout-sheet-v1";
 const isSheet = (url) => /^\/matches\/[^/]+\/sheet\/?$/.test(new URL(url).pathname);

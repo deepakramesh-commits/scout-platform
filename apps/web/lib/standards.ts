@@ -14,7 +14,6 @@ export const REFERENCE = [{ slug: "import-csv", title: "Event import CSV layout"
 
 const docs = () => resolve(process.env.DOCS_DIR ?? join(process.cwd(), "../../docs"));
 
-/** The markdown of a standard, or null for an unknown slug. */
 export async function readStandard(slug: string): Promise<{ title: string; markdown: string } | null> {
   const s = STANDARDS.find((x) => x.slug === slug);
   const r = REFERENCE.find((x) => x.slug === slug);

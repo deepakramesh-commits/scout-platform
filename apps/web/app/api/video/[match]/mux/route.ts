@@ -1,4 +1,3 @@
-// With Mux keys in the environment: a direct-upload URL the browser sends the file to in chunks.
 // The asset and playback ids arrive later through /api/mux/webhook.
 import { db } from "@/lib/auth";
 import { apiUser, json } from "@/lib/engine";

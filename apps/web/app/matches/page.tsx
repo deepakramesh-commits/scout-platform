@@ -28,7 +28,6 @@ const TOOLS: { label: string; path: string; for: Task[] }[] = [
 export default async function Matches() {
   const user = await requireMe(STAFF);
   const admin = user.role === "admin";
-  // An admin sees every match; staff see the ones assigned to them. Unpublished first, newest first.
   const rows = await db((tx) => tx<Row[]>`
     select m.id, m.status, m.kickoff_at, c.name || ' ' || c.season as competition, h.name as home, a.name as away,
            coalesce((select array_agg(task order by task) from match_assignments x where x.match_id = m.id and x.user_id = ${user.id}), '{}') as tasks,

@@ -9,7 +9,6 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Where each period starts and ends in the video, marked by the assigned analyst. */
 export async function savePeriods(matchId: string, periods: Period[]): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
   const parsed = parsePeriods(periods);
@@ -22,7 +21,6 @@ export async function savePeriods(matchId: string, periods: Period[]): Promise<A
   });
 }
 
-/** uploaded or tagging to review, and review back to tagging, through app.advance_match. */
 export async function moveMatch(matchId: string, next: "tagging" | "review"): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
   try {

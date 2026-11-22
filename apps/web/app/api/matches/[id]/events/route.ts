@@ -1,6 +1,4 @@
-// Each logged event saves on entry. The id comes from the analyst's browser, so a retried save updates the same row
-// and a crash loses at most the action being entered. The assigned reviewer writes to review_events instead, inside
-// the sample window, so a second opinion never feeds a profile.
+// The reviewer's re-log of the sample goes to review_events, so a second opinion never feeds a profile.
 import { db, type Q } from "@/lib/auth";
 import { apiUser, getMatch, json, matchPlayers, type Match } from "@/lib/engine";
 import { isUuid, parseEventInput } from "@/lib/log-tool";
@@ -8,7 +6,6 @@ import { isUuid, parseEventInput } from "@/lib/log-tool";
 type Table = "events" | "review_events";
 const tableOf = (v: unknown): Table | null => (v === "events" ? "events" : v === "review" ? "review_events" : null);
 
-/** The match, if this user may write this table on it now; otherwise the response to send. */
 async function writable(tx: Q, id: string, table: Table): Promise<Match | Response> {
   const match = await getMatch(tx, id);
   if (!match) return json({ error: "No such match." }, 404);
@@ -70,7 +67,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   return db(async (tx) => {
     const match = await writable(tx, id, table);
     if (match instanceof Response) return match;
-    // Deleting twice is fine: a retried delete after a dropped connection finds nothing and still succeeds.
     await tx`delete from ${tx(table)} where id = ${eventId} and match_id = ${id}`;
     return json({ ok: true });
   });

@@ -78,7 +78,6 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
   const defaultSample = sample
     ? { period: sample.period, start: sample.start, minutes: Math.round((sample.end - sample.start) / 60) }
     : { period: 1, start: firstPeriod?.start ?? 0,
-        // The default length from settings, but never past the end of the first half.
         minutes: firstPeriod ? Math.max(1, Math.min(settings.sampleMinutes, Math.floor((firstPeriod.end - firstPeriod.start) / 60))) : settings.sampleMinutes };
 
   return (

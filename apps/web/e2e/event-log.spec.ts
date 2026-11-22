@@ -12,7 +12,6 @@ test("an event saves on entry and is still there after a reload", async ({ page 
   const pitch = page.getByRole("img", { name: /attacking to the right/ });
   await page.getByRole("heading", { name: "Keys" }).click(); // keyboard focus out of any field
 
-  // Shirt 9, key P (pass): the first click is the start, the second the end, and the second click saves.
   await page.keyboard.type("9");
   await page.keyboard.press("p");
   await expect(page.getByText(/pass\. Click where it starts/)).toBeVisible();

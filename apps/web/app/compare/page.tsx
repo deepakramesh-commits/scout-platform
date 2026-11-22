@@ -27,7 +27,6 @@ const SERIES = { a: "var(--color-data-categorical-teal)", b: "var(--color-data-c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const pick = (v: string | string[] | undefined) => { const s = Array.isArray(v) ? v[0] : v; return s && UUID.test(s) ? s : null; };
 
-/** A player's numbers in the competition asked for, else in the one he played most, with every competition he has numbers in. */
 async function load(tx: Q, id: string | null, competitionId: string | null) {
   if (!id) return null;
   const [[s], competitions] = await Promise.all([

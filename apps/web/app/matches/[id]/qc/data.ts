@@ -3,7 +3,6 @@ import type { QcSettings } from "@/lib/qc";
 
 export type Settings = QcSettings & { sampleMinutes: number };
 
-/** The quality-check thresholds, stored as rows in `settings` so an admin can change them. */
 export async function readSettings(tx: Q): Promise<Settings> {
   const rows = await tx<{ key: string; value: number }[]>`select key, value from settings where key like 'qc_%'`;
   const get = (k: string, fallback: number) => Number(rows.find((r) => r.key === k)?.value ?? fallback);

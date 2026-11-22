@@ -26,7 +26,6 @@ export type SignupPlan = {
 export type SignupResult = { ok: true; plan: SignupPlan } | { ok: false; errors: Record<string, string> };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// The roles app.is_staff() trusts with every match and every pending profile.
 const STAFF_ROLES: string[] = ["admin", "tagger", "coordinator"];
 const POSITIONS = ["GK", "CB", "FB", "DM", "CM", "AM", "LW", "RW", "ST"];
 

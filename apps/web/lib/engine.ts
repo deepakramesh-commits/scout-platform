@@ -1,5 +1,4 @@
-// Reads shared by the data-engine screens and their routes. Every query runs inside the caller's db() transaction,
-// so row-level security decides what the user sees and may change.
+// Every query runs inside the caller's db() transaction, so row-level security decides what the user sees and may change.
 import { dirname, join } from "node:path";
 import { notFound, redirect } from "next/navigation";
 import { db, me, requireMe, type Me, type Q } from "./auth";
@@ -17,7 +16,6 @@ export type Match = {
   mux_playback_id: string | null; periods: Period[]; sheet_submitted_at: Date | null;
 };
 
-/** One match the user can see, or null. */
 export async function getMatch(tx: Q, id: string): Promise<Match | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [m] = await tx<Match[]>`
@@ -30,7 +28,6 @@ export async function getMatch(tx: Q, id: string): Promise<Match | null> {
   return m ?? null;
 }
 
-/** What the user is assigned to do on a match. An admin may do everything. */
 async function tasksFor(tx: Q, matchId: string, user: Me): Promise<Set<Task>> {
   if (user.role === "admin") return new Set(["coordinator", "analyst", "reviewer"]);
   const rows = await tx<{ task: Task }[]>`select task from match_assignments where match_id = ${matchId} and user_id = ${user.id}`;
@@ -69,7 +66,6 @@ export async function apiUser(roles: string[]): Promise<Me | Response> {
 
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-/** A match tool page: the user, the match and the user's tasks, or not found / back to the match list. */
 export async function loadTool(id: string, needs: Task[]): Promise<{ user: Me; match: Match; tasks: Set<Task> }> {
   const user = await requireMe(STAFF);
   const found = await db(async (tx) => {

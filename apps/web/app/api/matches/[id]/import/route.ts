@@ -1,5 +1,4 @@
-// Events logged in another tool: a CSV in the documented layout or StatsBomb-style JSON. All or nothing: one bad
-// row and nothing is written, because a half-imported match would feed profiles silently.
+// All or nothing: a half-imported match would feed profiles silently.
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/auth";
 import { apiUser, getMatch, json, matchPlayers } from "@/lib/engine";

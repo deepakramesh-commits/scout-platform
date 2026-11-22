@@ -1,4 +1,3 @@
-// Streams a match video stored locally, with Range support so the browser's player can seek.
 // Access is row-level security: a user who cannot see the match gets a 404, not the file.
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";

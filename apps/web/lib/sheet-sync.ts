@@ -1,5 +1,4 @@
-// The match sheet between the phone and the server: ids made on the phone, the sheet rebuilt from stored rows,
-// and the body the phone sends checked before it is written. Pure: relative .ts imports only.
+// Pure: relative .ts imports only.
 import { KINDS, POSITIONS, type Kind, type Position, type Sheet, type SheetEntry, type SheetLine } from "./match-sheet.ts";
 import { isUuid, type Parsed } from "./log-tool.ts";
 

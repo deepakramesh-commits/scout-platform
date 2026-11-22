@@ -1,8 +1,7 @@
-// Shared by the end-to-end tests: sign-in, the demo match, and direct database access to check and clean up.
 import { expect, type Page } from "@playwright/test";
 import postgres from "postgres";
 
-export const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:54330/postgres", { max: 2, idle_timeout: 2 }) // closes itself when idle, so no test file has to end the shared pool;
+export const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:54330/postgres", { max: 2, idle_timeout: 2 }) // closes itself when idle, so no test file has to end the shared pool
 export const PASSWORD = "scout-demo";
 
 export async function signIn(page: Page, email: string) {
@@ -16,7 +15,6 @@ export async function signIn(page: Page, email: string) {
 
 export type Demo = { id: string; home_id: string; away_id: string; home: string };
 
-/** The demo league's match, which the data-engine tools work on. */
 export async function demoMatch(): Promise<Demo> {
   const [m] = await sql<Demo[]>`
     select m.id, m.home_team_id as home_id, m.away_team_id as away_id, t.name as home
@@ -26,7 +24,6 @@ export async function demoMatch(): Promise<Demo> {
   return m;
 }
 
-/** Puts the demo match back as the seed left it, whatever a test created. */
 export async function resetMatch(id: string) {
   await sql.begin(async (tx) => {
     for (const t of ["review_events", "qc_runs", "qc_samples", "imports", "match_sheet_events"]) await tx`delete from ${tx(t)} where match_id = ${id}`;
@@ -37,7 +34,6 @@ export async function resetMatch(id: string) {
   });
 }
 
-/** A filled match sheet for both teams, written directly: shirts 1 to 11 start, 12 to 16 on the bench. */
 export async function seedLineups(m: Demo) {
   await sql`
     insert into lineups (match_id, team_id, player_id, shirt_number, position, started, minutes_played)

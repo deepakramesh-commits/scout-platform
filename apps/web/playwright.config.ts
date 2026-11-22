@@ -1,7 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// The tests share the demo match, so they run one at a time against one server. They reuse a running dev server
-// (E2E_BASE_URL, default port 3007) and start one only when none answers.
+// The tests share the demo match, so they run one at a time.
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3007";
 
 export default defineConfig({

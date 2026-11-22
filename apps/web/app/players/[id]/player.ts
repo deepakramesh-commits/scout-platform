@@ -15,7 +15,6 @@ export type Player = Header & MarketPlayer & {
 };
 export type PlayerWithoutData = Header & { role: null };
 
-/** The player's numbers in the competition asked for, else in the one he played most. */
 export async function getPlayer(tx: Q, id: string, competitionId: string | null = null): Promise<Player | PlayerWithoutData | null> {
   const [p] = await tx<(Player | PlayerWithoutData)[]>`
     select p.display_name, p.photo_url, p.photo_credit, p.photo_source_url, lt.team, p.primary_position, m.role, m.minutes, m.per90,

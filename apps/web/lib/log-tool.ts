@@ -1,4 +1,3 @@
-// The event log tool's rules, shared by the browser tool and the route that saves each event.
 // Pure: relative .ts imports only, so `node --test` runs it.
 import { checkEvent, normalise, type LoggedEvent } from "./event-spec.ts";
 import type { Period } from "./qc.ts";
@@ -12,7 +11,6 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const numOrNull = (v: unknown): number | null | undefined => (v == null ? null : typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const strOrNull = (v: unknown): string | null | undefined => (v == null || v === "" ? null : typeof v === "string" ? v : undefined);
 
-/** The period a moment of video belongs to: the latest marked period already started; period 1 before any is marked. */
 export function periodAt(periods: Period[], t: number): number {
   const started = periods.filter((p) => p.start <= t).sort((a, b) => b.start - a.start);
   return started[0]?.period ?? 1;
@@ -25,7 +23,6 @@ export function denormalise(e: LoggedEvent): LoggedEvent {
   return { ...e, outcome: aerial_won ? "won" : "lost", extra };
 }
 
-/** A saved event from the browser, checked against the event spec and stored the way the exporter expects. */
 export function parseEventInput(body: unknown): Parsed<EventInput> {
   if (!isRecord(body)) return { ok: false, errors: ["expected an event object"] };
   const errors: string[] = [];
@@ -54,7 +51,6 @@ export function parseEventInput(body: unknown): Parsed<EventInput> {
   };
 }
 
-/** Period marks from the browser: each period once, start before end, in playing order without overlap. */
 export function parsePeriods(body: unknown): Parsed<Period[]> {
   if (!Array.isArray(body)) return { ok: false, errors: ["expected a list of periods"] };
   const errors: string[] = [];

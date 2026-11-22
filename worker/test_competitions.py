@@ -26,7 +26,6 @@ def cur():
 
 
 def make_world(cur):
-    """Players a, b and c play for teams A and B in a match of each of two competitions."""
     ids = {k: uuid.uuid4() for k in ("cup", "league", "A", "B", "m1", "m2", "a", "b", "c")}
     cur.execute("insert into competitions (id, name, country, season, min_minutes) values (%s,'Cup','X','2024',1), (%s,'League','X','2025',1)",
                 (ids["cup"], ids["league"]))
