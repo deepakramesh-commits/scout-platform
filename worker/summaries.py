@@ -7,12 +7,13 @@ import os
 
 import pandas as pd
 
-from metrics import recorded_by_most
+from metrics import LOWER_IS_BETTER, recorded_by_most
 
 MODEL = "claude-opus-5-5"
 SYSTEM = (
     "You write three or four plain sentences for a European club scout about an African player, using only the facts "
     "given as JSON. Lead with the standout qualities. Say when a ranking rests on few players or few minutes. "
+    "A measure with lower_is_better is good when its percentile is low; say so when you quote it. "
     "Never invent a number, a trait or a comparison that is not in the facts. No headings, no lists."
 )
 
@@ -35,13 +36,19 @@ def facts(cur, player_id, competition_id) -> dict:
                 (competition_id, role))
     # the attribute rule: a measure most of his position never records ranks him on noise, so it is not named
     counted = recorded_by_most(pd.DataFrame(cur.fetchall(), columns=["role", "per90", "percentiles"]))
-    ranked = sorted(((k, v) for k, v in pct.items() if k in counted and counted.at[role, k]), key=lambda kv: -kv[1])
+    # stored percentiles are raw, so a high one for a lower-is-better measure is bad: rank on 100 - pct for those
+    ranked = sorted(((k, v) for k, v in pct.items() if k in counted and counted.at[role, k]),
+                    key=lambda kv: kv[1] - 100 if kv[0] in LOWER_IS_BETTER else -kv[1])
+
+    def measure(k, v):
+        return {"measure": k, "percentile": v, "value": per90.get(k), "lower_is_better": k in LOWER_IS_BETTER}
+
     return {
         "name": name, "competition": comp, "position": role, "minutes": minutes, "matches": matches,
         "ranked_against": peers, "birth_year": by, "birth_year_is_demo": demo_age,
         "standout_qualities": [labels.get(k, k) for k, v in sorted(attr.items(), key=lambda kv: -kv[1]) if v > 85][:2],
-        "best_measures": [{"measure": k, "percentile": v, "value": per90.get(k)} for k, v in ranked[:3]],
-        "weakest_measures": [{"measure": k, "percentile": v, "value": per90.get(k)} for k, v in ranked[-2:]] if ranked else [],
+        "best_measures": [measure(k, v) for k, v in ranked[:3]],
+        "weakest_measures": [measure(k, v) for k, v in ranked[-2:]] if ranked else [],
     }
 
 
@@ -68,7 +75,8 @@ def template_summary(f: dict) -> str:
     if f["standout_qualities"]:
         out.append(f"Standout qualities: {' and '.join(q.lower() for q in f['standout_qualities'])}.")
     if f["best_measures"]:
-        best = ", ".join(f"{nice(m['measure'])} ({ordinal(m['percentile'])} percentile)" for m in f["best_measures"])
+        best = ", ".join(f"{nice(m['measure'])} ({ordinal(m['percentile'])} percentile{', lower is better' * (m['measure'] in LOWER_IS_BETTER)})"
+                         for m in f["best_measures"])
         out.append(f"Best measures against other {f['position']} players: {best}.")
     else:
         out.append("He has not played enough minutes to be ranked yet.")

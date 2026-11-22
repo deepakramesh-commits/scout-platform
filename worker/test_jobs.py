@@ -81,6 +81,28 @@ def test_a_summary_never_names_a_measure_most_of_his_position_never_records():
     assert "saves (40th percentile)" in text and "passes (30th percentile)" in text
 
 
+def test_a_summary_reads_ball_losses_as_lower_is_better():
+    from summaries import facts
+    try:
+        c = psycopg.connect(DB, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    cid = c.execute("insert into competitions (name, country, season) values ('Test cup', 'GH', '2026') returning id").fetchone()[0]
+    careful, careless, middle = [r[0] for r in c.execute("select id from players order by id limit 3")]
+    for pid, losses in [(careful, 10), (careless, 100), (middle, 50)]:
+        pct = {"ball_losses": losses, "passes": 50, "tackles": 60, "interceptions": 40}
+        per90 = {"ball_losses": losses / 10, "passes": 20.0, "tackles": 2.0, "interceptions": 1.5}
+        c.execute("insert into player_season_metrics (player_id, competition_id, role, minutes, per90, percentiles, peers) "
+                  "values (%s, %s, 'CM', 900, %s::jsonb, %s::jsonb, 3)", (pid, cid, json.dumps(per90), json.dumps(pct)))
+    few, many = facts(c.cursor(), careful, cid), facts(c.cursor(), careless, cid)
+    text = template_summary(few)
+    c.rollback()
+    c.close()
+    assert "ball_losses" not in [m["measure"] for m in few["weakest_measures"]]
+    assert "ball_losses" not in [m["measure"] for m in many["best_measures"]]
+    assert "ball losses (10th percentile, lower is better)" in text
+
+
 def test_failed_job_is_retried_later_with_its_error(conn):
     c, created = conn
     jid = add_job(c, created, "no_such_kind", "{}")

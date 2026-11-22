@@ -260,6 +260,9 @@ profile until a second analyst's sample agrees.
   in his position record it (`test_a_summary_never_names_a_measure_most_of_his_position_never_records`, pytest
   108). Kouakou Herve Koffi's summary no longer names "dribbles completed (100th percentile)" as a goalkeeper's
   best measure.
+- Summaries rank ball losses as lower is better (`metrics.LOWER_IS_BETTER`) and quote its raw percentile with
+  "lower is better", as the profile table does (`test_a_summary_reads_ball_losses_as_lower_is_better`, pytest
+  109). Gelson (LW) no longer has "ball losses (100th percentile)" among his best measures.
 - Every phase 5 screen was opened at 1280 and 390 px as each role that uses it, with zero console errors and no
   horizontal scroll.
 - Numbers checked against the database by hand:
