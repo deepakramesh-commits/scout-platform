@@ -256,6 +256,10 @@ profile until a second analyst's sample agrees.
 - Results at 7441f2e: pytest 107, `npm test` 111, tsc clean, `npm run build` passing, `npx astryx doctor` 0
   failures, and Playwright 13 of 13. `scripts/check-fresh-db.sh` applied all 16 init files. The from-zero run in
   the final report reproduced pytest 107 and `npm test` 111 on a fresh clone.
+- Summaries now follow the phase 1 rule: a summary names a measure only where at least half the ranked players
+  in his position record it (`test_a_summary_never_names_a_measure_most_of_his_position_never_records`, pytest
+  108). Kouakou Herve Koffi's summary no longer names "dribbles completed (100th percentile)" as a goalkeeper's
+  best measure.
 - Every phase 5 screen was opened at 1280 and 390 px as each role that uses it, with zero console errors and no
   horizontal scroll.
 - Numbers checked against the database by hand:
@@ -334,9 +338,6 @@ item, how we record it, and the gap.
 
 **Weak stand-ins.**
 - **Agreement.** It covers a 15-minute sample. The other 75 minutes rest on rule flags and the first analyst.
-- **Summaries.** The best measures are raw metric percentiles, so the phase 1 rule (half the position must
-  record a measure) does not apply. In the from-zero run, Kouakou Herve Koffi's template summary named "dribbles
-  completed (100th percentile)" as a goalkeeper's best measure.
 - **Across competitions.** No league-strength rating exists, so numbers from two competitions are labelled side
   by side, not adjusted.
 

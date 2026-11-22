@@ -1,3 +1,4 @@
+import json
 import os
 
 import psycopg
@@ -56,6 +57,28 @@ def add_job(c, created, kind, payload):
     created.append(jid)
     c.execute("update jobs set run_after = now() + interval '1 day' where status = 'queued' and id <> %s", (jid,))
     return jid
+
+
+def test_a_summary_never_names_a_measure_most_of_his_position_never_records():
+    from summaries import facts
+    try:
+        c = psycopg.connect(DB, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    cid = c.execute("insert into competitions (name, country, season) values ('Test cup', 'GH', '2026') returning id").fetchone()[0]
+    keepers = [r[0] for r in c.execute("select id from players order by id limit 3")]
+    for pid, (pct, per90) in zip(keepers, [
+        ({"dribbles_completed": 100, "saves": 40, "passes": 30}, {"dribbles_completed": 0.2, "saves": 2.0, "passes": 20.0}),
+        ({"dribbles_completed": 50, "saves": 90, "passes": 60}, {"dribbles_completed": 0.0, "saves": 3.5, "passes": 25.0}),
+        ({"dribbles_completed": 50, "saves": 60, "passes": 90}, {"dribbles_completed": 0.0, "saves": 2.5, "passes": 30.0}),
+    ]):
+        c.execute("insert into player_season_metrics (player_id, competition_id, role, minutes, per90, percentiles, peers) "
+                  "values (%s, %s, 'GK', 900, %s::jsonb, %s::jsonb, 3)", (pid, cid, json.dumps(per90), json.dumps(pct)))
+    text = template_summary(facts(c.cursor(), keepers[0], cid))
+    c.rollback()
+    c.close()
+    assert "dribbles completed" not in text
+    assert "saves (40th percentile)" in text and "passes (30th percentile)" in text
 
 
 def test_failed_job_is_retried_later_with_its_error(conn):

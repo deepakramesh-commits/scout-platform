@@ -5,6 +5,10 @@ People decide; the summary only restates the numbers, so the template and the mo
 import json
 import os
 
+import pandas as pd
+
+from metrics import recorded_by_most
+
 MODEL = "claude-opus-5-5"
 SYSTEM = (
     "You write three or four plain sentences for a European club scout about an African player, using only the facts "
@@ -27,7 +31,11 @@ def facts(cur, player_id, competition_id) -> dict:
     name, by, demo_age, comp, role, minutes, peers, per90, pct, attr, matches = row
     cur.execute("select key, label from attributes")
     labels = dict(cur.fetchall())
-    ranked = sorted(((k, v) for k, v in pct.items()), key=lambda kv: -kv[1])
+    cur.execute("select role, per90, percentiles from player_season_metrics where competition_id = %s and role = %s",
+                (competition_id, role))
+    # the attribute rule: a measure most of his position never records ranks him on noise, so it is not named
+    counted = recorded_by_most(pd.DataFrame(cur.fetchall(), columns=["role", "per90", "percentiles"]))
+    ranked = sorted(((k, v) for k, v in pct.items() if k in counted and counted.at[role, k]), key=lambda kv: -kv[1])
     return {
         "name": name, "competition": comp, "position": role, "minutes": minutes, "matches": matches,
         "ranked_against": peers, "birth_year": by, "birth_year_is_demo": demo_age,
