@@ -6,6 +6,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { Selector } from "@astryxdesign/core/Selector";
+import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { publish, requestExport, runCheck, saveSample, type ActionResult } from "./actions";
@@ -57,7 +58,8 @@ export function ActionButton({ label, kind, matchId, variant = "secondary", isDi
   const f = { run: runCheck, publish, export: requestExport }[kind];
   return (
     <VStack gap={2}>
-      <Button label={label} variant={variant} isLoading={pending} isDisabled={isDisabled} tooltip={isDisabled ? why : undefined} onClick={() => run(() => f(matchId))} />
+      <Button label={label} variant={variant} isLoading={pending} isDisabled={isDisabled} onClick={() => run(() => f(matchId))} />
+      {isDisabled && why ? <Text type="supporting" color="secondary">{why}</Text> : null}
       {banner}
     </VStack>
   );

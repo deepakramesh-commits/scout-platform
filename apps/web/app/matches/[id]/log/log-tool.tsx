@@ -255,7 +255,7 @@ export function LogTool(props: {
                   return (
                     <HStack key={p} gap={2} vAlign="center" wrap="wrap">
                       <Text>{PERIOD_NAME[p]}</Text>
-                      <Text type="supporting">{m?.start != null ? clock(m.start) : "not started"} to {m?.end != null ? clock(m.end) : "not ended"}</Text>
+                      <Text type="supporting">{m?.start == null ? "Not started" : m.end == null ? `Started at ${clock(m.start)}` : `${clock(m.start)} to ${clock(m.end)}`}</Text>
                       <Button size="sm" label="Starts now" onClick={() => markPeriod(p, "start")} isDisabled={!props.videoSrc} />
                       <Button size="sm" label="Ends now" onClick={() => markPeriod(p, "end")} isDisabled={!props.videoSrc || m?.start == null} />
                     </HStack>

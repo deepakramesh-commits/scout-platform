@@ -154,7 +154,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
 
   return (
     <VStack gap={4}>
-      <SegmentedControl label="Team" value={teamId} onChange={setTeamId}>
+      <SegmentedControl label="Team" size="lg" layout="fill" value={teamId} onChange={setTeamId}>
         {teams.map((t) => <SegmentedControlItem key={t.id} value={t.id} label={t.name} />)}
       </SegmentedControl>
 
@@ -177,7 +177,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
                 {n > 0 && <Divider />}
                 <HStack hAlign="between" vAlign="center" gap={2} wrap="wrap">
                   <Text weight="semibold">{row.name}</Text>
-                  <SegmentedControl label={`${row.name}: starts, bench or not named`} size="sm" value={role} onChange={(v) => setRole(row, v)}>
+                  <SegmentedControl label={`${row.name}: starts, bench or not named`} size="lg" layout="fill" value={role} onChange={(v) => setRole(row, v)}>
                     <SegmentedControlItem value="start" label="Starts" />
                     <SegmentedControlItem value="bench" label="Bench" />
                     <SegmentedControlItem value="out" label="Out" />

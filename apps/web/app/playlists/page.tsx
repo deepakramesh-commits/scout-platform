@@ -65,7 +65,7 @@ async function PlaylistsPage(tx: Q, wanted: string | undefined, clip: string | u
       <Card>
         <VStack gap={4}>
           <Heading level={3}>Your playlists</Heading>
-          {lists.length === 0 && <Text type="supporting">None yet. Name your first one below. Only you see your playlists.</Text>}
+          {lists.length === 0 && <Text type="supporting">None yet. Name your first one below, then add actions from a player's profile. Only you see your playlists.</Text>}
           <HStack gap={4} wrap="wrap">
             {lists.map((l) => (
               <HStack key={l.id} gap={2} vAlign="center" wrap="wrap">
@@ -161,7 +161,7 @@ async function PlaylistsPage(tx: Q, wanted: string | undefined, clip: string | u
           </VStack>
         </Card>
       ) : (
-        <Card><EmptyState title="Start a playlist" description="Name it above, then add actions from a player's profile." /></Card>
+        lists.length > 0 && <Card><EmptyState title="Choose a playlist" description="Pick one of your playlists above to watch its clips." /></Card>
       )}
     </VStack>
   );
