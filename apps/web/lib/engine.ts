@@ -64,7 +64,7 @@ export async function apiUser(roles: string[]): Promise<Me | Response> {
   return user;
 }
 
-export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+export { clock } from "./qc";
 
 export async function loadTool(id: string, needs: Task[]): Promise<{ user: Me; match: Match; tasks: Set<Task> }> {
   const user = await requireMe(STAFF);

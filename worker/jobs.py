@@ -7,6 +7,7 @@ so several workers can run, and retries a failure with attempts + 1 and a growin
 import argparse
 import os
 import pathlib
+import shutil
 import time
 import traceback
 
@@ -35,10 +36,13 @@ def write_report(cur, payload):
 
 
 def delete_personal_data(cur, payload):
-    """Consent withdrawn: identity, documents, market and test data go; the match record of events stays."""
+    """Consent withdrawn: identity, documents, market and test data and the exports naming him go; the match record of events stays."""
     pid = payload["player_id"]
     for doc in (STORAGE / "private" / "ids").glob(f"{pid}-*"):
         doc.unlink()
+    cur.execute("select distinct match_id from lineups where player_id = %s", (pid,))
+    for (mid,) in cur.fetchall():
+        shutil.rmtree(EXPORTS / str(mid), ignore_errors=True)
     cur.execute("update consents set guardian_contact = null where player_id = %s", (pid,))
     for table in ("player_identity", "player_market", "physical_tests", "verifications"):
         cur.execute(f"delete from {table} where player_id = %s", (pid,))

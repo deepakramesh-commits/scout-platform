@@ -13,7 +13,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { POSITIONS, validateSheet, type Kind, type Position, type Sheet, type SheetEntry, type SheetError } from "@/lib/match-sheet";
+import { lastMinute, POSITIONS, validateSheet, type Kind, type Position, type Sheet, type SheetEntry, type SheetError } from "@/lib/match-sheet";
 import { uuid } from "@/lib/sheet-sync";
 
 type SquadRow = { player_id: string; name: string; shirt_number: number | null; position: string | null };
@@ -216,7 +216,7 @@ export function SheetForm({ matchId, teams, sentAt }: { matchId: string; teams: 
                   <Button size="sm" variant="ghost" label="Remove" onClick={() => edit((s) => ({ ...s, entries: s.entries.filter((x) => x.id !== e.id) }))} />
                 </HStack>
                 <HStack gap={2} wrap="wrap">
-                  <NumberInput label="Minute" size="sm" min={1} max={sheet.length + 15} value={e.minute} width={96}
+                  <NumberInput label="Minute" size="sm" min={1} max={lastMinute(sheet.length)} value={e.minute} width={96}
                     onChange={(v) => setEntry(e.id, { minute: v })} status={err(fieldError(`${f}.minute`))} />
                   <Selector label={e.kind === "substitution" ? "Player off" : "Player"} size="sm" value={e.player_id || undefined} placeholder="Choose"
                     options={named} onChange={(v) => setEntry(e.id, { player_id: v })} status={err(fieldError(`${f}.player`))} />

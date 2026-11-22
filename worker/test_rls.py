@@ -374,8 +374,8 @@ def test_a_match_is_published_only_through_the_quality_check(cur):
 def test_the_reviewer_publishes_only_a_match_in_review_whose_latest_check_passed_without_flags(cur, status, passed, flags, error):
     m = did("match", "demo")
     cur.execute("update matches set status = %s where id = %s", (status, m))
-    cur.execute("""insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, run_at)
-                   values (%s, 6, 6, 6, 1, %s, %s, now() + interval '1 day')""", (m, passed, flags))
+    cur.execute("""insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, run_at, inputs_seen)
+                   select id, 6, 6, 6, 1, %s, %s, now() + interval '1 day', inputs_changed_at from matches where id = %s""", (passed, flags, m))
     jobs = one(cur, "select count(*) from jobs where kind = 'compute_match_metrics'")
     act_as(cur, "analyst2")
     if error:
@@ -486,3 +486,156 @@ def test_jobs_are_read_by_admins_and_by_the_reviewer_for_his_exports(cur, key, s
     assert {k for k, _ in rows} == seen
     if key != "admin":
         assert all(m == str(did("match", "demo")) for _, m in rows)
+
+
+INPUT_CHANGES = {
+    "an event logged in review": ("analyst", "insert into events (match_id, team_id, period, video_seconds, type, source) "
+                                             "values (%(m)s, %(team)s, 1, 0, 'pass', 'manual')"),
+    "the periods": ("analyst", """update matches set periods = '[{"period": 1, "start": 0, "end": 2700}]' where id = %(m)s"""),
+    "a lineup": ("coordinator", "insert into lineups (match_id, team_id, player_id) values (%(m)s, %(team)s, %(player)s)"),
+    "a sheet event": ("coordinator", "insert into match_sheet_events (id, match_id, team_id, kind, minute, player_id, submitted_by) "
+                                     "values (gen_random_uuid(), %(m)s, %(team)s, 'yellow_card', 10, %(player)s, auth.uid())"),
+}
+
+
+def passing_run_in_review(cur, m):
+    cur.execute("reset role")
+    cur.execute("update matches set status = 'review' where id = %s", (m,))
+    cur.execute("insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, inputs_seen) "
+                "select id, 6, 6, 6, 1, true, 0, inputs_changed_at from matches where id = %s", (m,))
+    return cur.execute("select s.team_id, s.player_id from matches m join squad_members s on s.team_id = m.home_team_id "
+                       "where m.id = %s and s.player_id not in (select player_id from lineups where match_id = m.id) limit 1",
+                       (m,)).fetchone()
+
+
+def publish_refusal(cur, m):
+    """What app.publish_match says to the reviewer now, or None when it publishes; rolled back either way."""
+    act_as(cur, "analyst2")
+    cur.execute("savepoint p")
+    try:
+        cur.execute("select app.publish_match(%s)", (m,))
+        return None
+    except psycopg.errors.RaiseException as e:
+        return str(e)
+    finally:
+        cur.execute("rollback to savepoint p")
+
+
+@pytest.mark.parametrize("change", INPUT_CHANGES)
+def test_a_passing_check_goes_stale_when_what_it_checked_changes(cur, change):
+    m = did("match", "demo")
+    team, player = passing_run_in_review(cur, m)
+    assert publish_refusal(cur, m) is None
+    key, q = INPUT_CHANGES[change]
+    act_as(cur, key)
+    cur.execute(q, {"m": m, "team": team, "player": player})
+    assert cur.rowcount == 1
+    assert "changed after the latest quality check" in (publish_refusal(cur, m) or "published")
+
+
+def test_back_to_tagging_and_review_again_needs_a_new_check_when_events_changed(cur):
+    m = did("match", "demo")
+    team, _ = passing_run_in_review(cur, m)
+    act_as(cur, "analyst")
+    cur.execute("select app.advance_match(%s, 'tagging')", (m,))
+    cur.execute("insert into events (match_id, team_id, period, video_seconds, type, source) values (%s, %s, 1, 0, 'pass', 'manual')", (m, team))
+    cur.execute("select app.advance_match(%s, 'review')", (m,))
+    assert "changed after the latest quality check" in (publish_refusal(cur, m) or "published")
+
+
+def test_a_check_that_saw_the_latest_change_publishes_and_a_deleted_event_makes_it_stale(cur):
+    m = did("match", "demo")
+    team, _ = passing_run_in_review(cur, m)
+    act_as(cur, "analyst")
+    e = one(cur, "insert into events (match_id, team_id, period, video_seconds, type, source) values (%s, %s, 1, 0, 'pass', 'manual') "
+                 "returning id", m, team)
+    cur.execute("reset role")
+    # the stamp is written once per transaction, and this test is one transaction: date it as an earlier one
+    cur.execute("update matches set inputs_changed_at = now() - interval '1 minute' where id = %s", (m,))
+    cur.execute("insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, inputs_seen, run_at) "
+                "select id, 6, 6, 6, 1, true, 0, inputs_changed_at, now() + interval '1 second' from matches where id = %s", (m,))
+    assert publish_refusal(cur, m) is None
+    act_as(cur, "analyst")
+    cur.execute("delete from events where id = %s", (e,))
+    assert "changed after the latest quality check" in (publish_refusal(cur, m) or "published")
+
+
+@pytest.mark.parametrize("table, q", [
+    ("lineups", "insert into lineups (match_id, team_id, player_id) values (%(m)s, %(team)s, %(player)s)"),
+    ("match_sheet_events", "insert into match_sheet_events (id, match_id, team_id, kind, minute, player_id, submitted_by) "
+                           "values (gen_random_uuid(), %(m)s, %(team)s, 'yellow_card', 10, %(player)s, auth.uid())"),
+])
+def test_the_coordinator_cannot_change_the_sheet_of_a_published_match(cur, table, q):
+    m = did("match", "demo")
+    team, player = passing_run_in_review(cur, m)
+    cur.execute("update matches set status = 'published' where id = %s", (m,))
+    act_as(cur, "coordinator")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute(q, {"m": m, "team": team, "player": player})
+
+
+def test_scouts_read_events_only_of_published_matches(cur):
+    m = did("match", "demo")
+    team = one(cur, "select home_team_id from matches where id = %s", m)
+    cur.execute("insert into events (match_id, team_id, period, video_seconds, type, source) values (%s, %s, 1, 0, 'pass', 'manual')", (m, team))
+    act_as(cur, "scout")
+    assert one(cur, "select count(*) from matches where id = %s", m) == 1
+    assert one(cur, "select count(*) from events where match_id = %s", m) == 0
+    act_as(cur, "analyst")
+    assert one(cur, "select count(*) from events where match_id = %s", m) == 1
+
+
+def test_a_second_summary_request_while_one_waits_queues_nothing(cur):
+    act_as(cur, "scout")
+    pid, cid = cur.execute("select player_id, competition_id from player_season_metrics where player_id in (select app.visible_players()) "
+                           "and competition_id in (select app.covered_competitions()) limit 1").fetchone()
+    cur.execute("reset role")
+    cur.execute("delete from jobs where kind = 'write_report'")
+    act_as(cur, "scout")
+    cur.execute("select app.request_summary(%s, %s)", (pid, cid))
+    cur.execute("select app.request_summary(%s, %s)", (pid, cid))
+    cur.execute("reset role")
+    assert one(cur, "select count(*) from jobs where kind = 'write_report'") == 1
+
+
+def test_back_to_tagging_waits_for_a_publish_in_flight_and_then_refuses():
+    """Two sessions at once, so this one commits; it puts the demo match back as it found it."""
+    import threading
+    try:
+        admin = psycopg.connect(DB, autocommit=True, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    m = did("match", "demo")
+    before = admin.execute("select status from matches where id = %s", (m,)).fetchone()[0]
+    run = admin.execute("insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, inputs_seen) "
+                        "select id, 6, 6, 6, 1, true, 0, inputs_changed_at from matches where id = %s returning id", (m,)).fetchone()[0]
+    admin.execute("update matches set status = 'review' where id = %s", (m,))
+    reviewer, analyst = psycopg.connect(DB), psycopg.connect(DB)
+    outcome = {}
+    try:
+        act_as(reviewer.cursor(), "analyst2")
+        reviewer.execute("select app.publish_match(%s)", (m,))
+
+        def back():
+            try:
+                act_as(analyst.cursor(), "analyst")
+                analyst.execute("select app.advance_match(%s, 'tagging')", (m,))
+                analyst.commit()
+                outcome["moved"] = True
+            except psycopg.Error as e:
+                analyst.rollback()
+                outcome["error"] = str(e)
+        t = threading.Thread(target=back)
+        t.start()
+        t.join(1)
+        reviewer.commit()
+        t.join(10)
+        assert admin.execute("select status from matches where id = %s", (m,)).fetchone()[0] == "published"
+        assert "cannot move a match from published" in outcome.get("error", "")
+    finally:
+        reviewer.close()
+        analyst.close()
+        admin.execute("delete from jobs where kind = 'compute_match_metrics' and payload->>'match_id' = %s", (str(m),))
+        admin.execute("delete from qc_runs where id = %s", (run,))
+        admin.execute("update matches set status = %s where id = %s", (before, m))
+        admin.close()

@@ -17,7 +17,7 @@ import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { BODY_PARTS, EVENT_SPEC, SPEC_BY_KEY, SPEC_BY_TYPE, type EventType, type LoggedEvent } from "@/lib/event-spec";
 import { denormalise, periodAt } from "@/lib/log-tool";
-import type { Period, Sample } from "@/lib/qc";
+import { clock, type Period, type Sample } from "@/lib/qc";
 import { uuid } from "@/lib/sheet-sync";
 import { moveMatch, savePeriods } from "./actions";
 
@@ -31,7 +31,6 @@ type Draft = {
 };
 
 const EMPTY: Draft = { id: null, type: null, outcome: null, bodyPart: null, extra: {}, start: null, end: null, t: null };
-const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const round = (n: number) => Math.round(n * 10) / 10;
 const PERIOD_NAME: Record<number, string> = { 1: "First half", 2: "Second half", 3: "Extra time, first", 4: "Extra time, second" };
 

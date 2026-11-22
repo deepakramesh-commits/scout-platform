@@ -15,6 +15,8 @@ export type SheetError = { field: string; message: string };
 const STARTERS = 11;
 const MAX_SUBS: Record<Sheet["length"], number> = { 90: 5, 120: 6 };
 const STOPPAGE = 15;
+/** The last minute an entry may name; match_sheet_events stores minutes up to 130. */
+export const lastMinute = (length: Sheet["length"]) => Math.min(length + STOPPAGE, 130);
 
 /** Who is on the pitch at the start of a minute, replaying substitutions and red cards in order. */
 function onPitchAt(sheet: Sheet, minute: number, before?: SheetEntry): Set<string> {
@@ -48,7 +50,7 @@ export function validateSheet(sheet: Sheet, squad: SquadPlayer[]): SheetError[] 
   });
   if (new Set(sheet.lineup.map((l) => l.player_id)).size !== sheet.lineup.length) err("lineup", "a player is listed twice");
 
-  const last = sheet.length + STOPPAGE;
+  const last = lastMinute(sheet.length);
   const subs = sheet.entries.filter((e) => e.kind === "substitution");
   if (subs.length > MAX_SUBS[sheet.length]) err("entries", `at most ${MAX_SUBS[sheet.length]} substitutions`);
   const cameOn = new Set<string>();

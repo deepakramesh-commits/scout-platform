@@ -50,18 +50,19 @@ export async function runCheck(matchId: string): Promise<ActionResult> {
       const [sample] = await tx<{ period: number; start: number; end: number }[]>`
         select period, start_seconds::float8 as start, end_seconds::float8 as end from qc_samples where match_id = ${matchId}`;
       if (!sample) throw new Error("Choose the sample window first.");
-      const [settings, primary, review, [m], lineups, sheet] = await Promise.all([
+      // Read before the events: a change committed after this read leaves the run stale, never wrongly current.
+      const [m] = await tx<{ periods: Period[]; seen: string | null }[]>`select periods, inputs_changed_at::text as seen from matches where id = ${matchId}`;
+      const [settings, primary, review, lineups, sheet] = await Promise.all([
         readSettings(tx), qcEvents(tx, "events", matchId), qcEvents(tx, "review_events", matchId),
-        tx<{ periods: Period[] }[]>`select periods from matches where id = ${matchId}`,
         tx<SheetLine[]>`select player_id, team_id, started from lineups where match_id = ${matchId}`,
         tx<SheetEvent[]>`select kind, minute, player_id, player_in_id, team_id from match_sheet_events where match_id = ${matchId}`,
       ]);
       const r = qualityCheck(primary, review, sample, settings);
       const flags = ruleFlags(primary, m.periods, lineups, sheet).length;
       await tx`
-        insert into qc_runs (match_id, analyst_id, reviewer_id, primary_count, review_count, agreed, agreement, passed, flags, details)
+        insert into qc_runs (match_id, analyst_id, reviewer_id, primary_count, review_count, agreed, agreement, passed, flags, details, inputs_seen)
         values (${matchId}, ${mainTagger(primary)}, ${mainTagger(review)}, ${r.primaryCount}, ${r.reviewCount}, ${r.agreed}, ${r.agreement},
-                ${r.passed}, ${flags}, ${tx.json({ byType: r.byType, pairs: r.pairs, sample, settings })})`;
+                ${r.passed}, ${flags}, ${tx.json({ byType: r.byType, pairs: r.pairs, sample, settings })}, ${m.seen}::timestamptz)`;
       outcome = checkOutcome(r, flags);
     });
   } catch (e) { return fail(e); }
@@ -69,7 +70,7 @@ export async function runCheck(matchId: string): Promise<ActionResult> {
   return { ok: true, message: outcome.message, warning: !outcome.publishable };
 }
 
-/** Publishing goes through app.publish_match, which refuses unless the match is in review and the latest run passed with no rule flags. */
+/** Publishing goes through app.publish_match, which refuses unless the match is in review and the latest run passed with no rule flags on the current data. */
 export async function publish(matchId: string): Promise<ActionResult> {
   await requireMe(["tagger", "admin"]);
   try { await db((tx) => tx`select app.publish_match(${matchId})`); } catch (e) { return fail(e); }

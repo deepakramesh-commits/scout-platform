@@ -196,7 +196,8 @@ def fetch_match(cur, match_id):
         from matches m join competitions c on c.id = m.competition_id join teams h on h.id = m.home_team_id join teams a on a.id = m.away_team_id
         where m.id = %s""", (match_id,))
     match = dict(zip([d.name for d in cur.description], cur.fetchone()))
-    cur.execute("""select l.player_id, p.display_name, p.nationality, l.team_id, l.shirt_number, l.position, l.started
+    cur.execute("""select l.player_id, case when p.status = 'withdrawn' then 'Withdrawn player' else p.display_name end as display_name,
+                          case when p.status <> 'withdrawn' then p.nationality end as nationality, l.team_id, l.shirt_number, l.position, l.started
                    from lineups l join players p on p.id = l.player_id where l.match_id = %s""", (match_id,))
     lineups = [dict(zip([d.name for d in cur.description], r)) for r in cur.fetchall()]
     cur.execute("""select id, team_id, player_id, period, video_seconds, type, outcome, x, y, end_x, end_y, body_part, extra, related_event_id

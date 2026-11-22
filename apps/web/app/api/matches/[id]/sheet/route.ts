@@ -15,6 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return db(async (tx) => {
     const match = await getMatch(tx, id);
     if (!match) return json({ error: "No such match." }, 404);
+    if (match.status === "published") return json({ error: "This match is published; its sheet can no longer change." }, 409);
     if (team_id !== match.home_id && team_id !== match.away_id) return json({ error: "That team is not in this match." }, 422);
     const [{ ok }] = await tx<{ ok: boolean }[]>`select app.assigned(${id}, 'coordinator') as ok`;
     if (!ok) return json({ error: "You are not the coordinator for this match." }, 403);

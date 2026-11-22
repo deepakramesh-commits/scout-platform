@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkOutcome, publishBlocker, qualityCheck, ruleFlags, type QcEvent } from "./qc.ts";
+import { checkOutcome, near, publishBlocker, qualityCheck, ruleFlags, type QcEvent } from "./qc.ts";
 
 const ev = (id: string, o: Partial<QcEvent>): QcEvent => ({
   id, player_id: "a", team_id: "H", period: 1, video_seconds: 100, type: "pass", x: 50, y: 40, ...o,
@@ -86,9 +86,21 @@ test("a check that does not pass, or passes with rule flags, is a warning that k
 });
 
 test("publishing waits for review, then a passing check without rule flags", () => {
-  assert.match(publishBlocker("tagging", { passed: true, flags: 0 })!, /send the match to review/);
+  assert.match(publishBlocker("tagging", { passed: true, flags: 0, current: true })!, /send the match to review/);
   assert.match(publishBlocker("review", undefined)!, /Run the quality check/);
-  assert.match(publishBlocker("review", { passed: false, flags: 0 })!, /must pass/);
-  assert.match(publishBlocker("review", { passed: true, flags: 2 })!, /Fix the 2 rule flags/);
-  assert.equal(publishBlocker("review", { passed: true, flags: 0 }), null);
+  assert.match(publishBlocker("review", { passed: false, flags: 0, current: true })!, /must pass/);
+  assert.match(publishBlocker("review", { passed: true, flags: 2, current: true })!, /Fix the 2 rule flags/);
+  assert.equal(publishBlocker("review", { passed: true, flags: 0, current: true }), null);
+});
+
+test("a check older than the latest change to the match cannot publish it", () => {
+  assert.match(publishBlocker("review", { passed: true, flags: 0, current: false }) ?? "", /changed after the latest check/);
+  assert.equal(publishBlocker("review", { passed: true, flags: 0, current: true }), null);
+});
+
+test("a pair located on one side only, or partly, is not near", () => {
+  assert.equal(near(ev("1", { x: 50, y: null }), ev("2", { x: 50, y: 40 }), 5), false);
+  assert.equal(near(ev("1", { x: 50, y: 40 }), ev("2", { x: null, y: null }), 5), false);
+  assert.equal(near(ev("1", { x: null, y: null }), ev("2", { x: null, y: null }), 5), true);
+  assert.equal(near(ev("1", { x: 50, y: 40 }), ev("2", { x: 53, y: 44 }), 5), true);
 });

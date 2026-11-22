@@ -56,3 +56,8 @@ test("minutes played follow substitutions, red cards and second yellows", () => 
   ] }));
   assert.deepEqual([m.s10, m.b1, m.s1, m.s2, m.s0, m.b2], [60, 30, 30, 70, 90, 0]);
 });
+
+test("a minute past 130 is refused even in a match with extra time, as the database stores no later minute", () => {
+  const s = sheet({ length: 120, entries: [{ id: "1", kind: "goal", minute: 131, player_id: "s10", player_in_id: null }] });
+  assert.deepEqual(validateSheet(s, squad).map((e) => e.message), ["minute must be 1 to 130"]);
+});

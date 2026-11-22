@@ -9,9 +9,9 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
+import { clock } from "@/lib/qc";
 import { publish, requestExport, runCheck, saveSample, type ActionResult } from "./actions";
 
-const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const seconds = (mmss: string) => {
   const m = /^(\d{1,3}):([0-5]\d)$/.exec(mmss.trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;

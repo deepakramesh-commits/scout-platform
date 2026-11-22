@@ -1,4 +1,4 @@
-// Access is row-level security: a user who cannot see the match gets a 404, not the file.
+// Access is row-level security plus publication: a user who cannot see the match, or a scout before it publishes, gets a 404.
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -12,7 +12,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ match: s
   const { match } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(match)) return new Response("Not found", { status: 404 });
   const [row] = await db((tx) => tx<{ video_path: string | null }[]>`
-    select video_path from matches where id = ${match} and video_provider = 'local'`);
+    select video_path from matches where id = ${match} and video_provider = 'local' and (status = 'published' or app.match_staff())`);
   if (!row?.video_path) return new Response("Not found", { status: 404 });
   const file = join(videoDir(), row.video_path);
   const size = await stat(file).then((s) => s.size, () => null);

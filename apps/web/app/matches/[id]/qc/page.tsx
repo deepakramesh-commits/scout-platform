@@ -12,14 +12,14 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { db } from "@/lib/auth";
 import { clock, exportDir, loadTool, matchPlayers } from "@/lib/engine";
 import { SPEC_BY_TYPE } from "@/lib/event-spec";
-import { publishBlocker, qualityCheck, ruleFlags, type QcEvent, type Sample, type SheetEvent, type SheetLine } from "@/lib/qc";
+import { near, publishBlocker, qualityCheck, ruleFlags, type QcEvent, type Sample, type SheetEvent, type SheetLine } from "@/lib/qc";
 import { MatchHeader } from "../match-header";
 import { ActionButton, SampleForm } from "./controls";
 import { readSettings } from "./data";
 
 export const dynamic = "force-dynamic";
 
-type Run = { run_at: Date; agreement: number; passed: boolean; primary_count: number; review_count: number; agreed: number; flags: number; reviewer: string | null };
+type Run = { run_at: Date; agreement: number; passed: boolean; primary_count: number; review_count: number; agreed: number; flags: number; current: boolean; reviewer: string | null };
 type Accuracy = { name: string | null; runs: number; mean: number; last: Date };
 type Job = { status: string; last_error: string | null };
 
@@ -48,8 +48,10 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
       tx<SheetLine[]>`select player_id, team_id, started from lineups where match_id = ${id}`,
       tx<SheetEvent[]>`select kind, minute, player_id, player_in_id, team_id from match_sheet_events where match_id = ${id}`,
       tx<Sample[]>`select period, start_seconds::float8 as start, end_seconds::float8 as end from qc_samples where match_id = ${id}`,
-      tx<Run[]>`select r.run_at, r.agreement::float8 as agreement, r.passed, r.primary_count, r.review_count, r.agreed, r.flags, u.display_name as reviewer
-                from qc_runs r left join app_users u on u.id = r.reviewer_id where r.match_id = ${id} order by r.run_at desc limit 10`,
+      tx<Run[]>`select r.run_at, r.agreement::float8 as agreement, r.passed, r.primary_count, r.review_count, r.agreed, r.flags,
+                       r.inputs_seen is not distinct from m.inputs_changed_at as current, u.display_name as reviewer
+                from qc_runs r join matches m on m.id = r.match_id left join app_users u on u.id = r.reviewer_id
+                where r.match_id = ${id} order by r.run_at desc limit 10`,
       tx<Accuracy[]>`select u.display_name as name, count(*)::int as runs, avg(r.agreement)::float8 as mean, max(r.run_at) as last
                      from qc_runs r left join app_users u on u.id = r.analyst_id where r.analyst_id is not null
                      group by u.display_name order by mean desc`,
@@ -69,8 +71,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
   const describe = (e: QcEvent) => `${clock(e.video_seconds)} · ${SPEC_BY_TYPE[e.type]?.label ?? e.type} · ${e.player_id ? who.get(e.player_id) ?? "unknown player" : "no player"}`;
   const paired = new Set(live?.pairs.flat() ?? []);
   const inSample = (e: QcEvent) => sample && e.period === sample.period && e.video_seconds >= sample.start && e.video_seconds <= sample.end;
-  const far = (live?.pairs ?? []).map(([a, b]) => [byId.get(a)!, byId.get(b)!] as const).filter(([a, b]) =>
-    a.x == null || b.x == null ? a.x !== b.x : Math.hypot(a.x - b.x!, a.y! - b.y!) > settings.locationTolerance);
+  const far = (live?.pairs ?? []).map(([a, b]) => [byId.get(a)!, byId.get(b)!] as const).filter(([a, b]) => !near(a, b, settings.locationTolerance));
   const unmatched = [
     ...primary.filter((e) => inSample(e) && !paired.has(e.id)).map((e) => ({ e, side: "Only the analyst" })),
     ...review.filter((e) => inSample(e) && !paired.has(e.id)).map((e) => ({ e, side: "Only the reviewer" })),

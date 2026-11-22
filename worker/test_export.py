@@ -68,3 +68,24 @@ def test_a_won_aerial_duel_becomes_the_flag_on_the_next_action():
     assert not any(e["type"]["name"] == "Duel" and e.get("duel", {}).get("type", {}).get("name") == "Aerial Lost" and e["minute"] == 47 for e in events)
     header = next(e for e in events if e.get("id") == str(U("e11")))
     assert header["pass"]["aerial_won"] is True
+
+
+def test_a_withdrawn_player_leaves_the_export_under_no_name():
+    import os
+
+    import psycopg
+    import pytest
+
+    from export_statsbomb import fetch_match
+    try:
+        conn = psycopg.connect(os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:54330/postgres"), connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    with conn.cursor() as cur:
+        m, pid = cur.execute("select match_id, player_id from lineups limit 1").fetchone()
+        cur.execute("update players set status = 'withdrawn' where id = %s", (pid,))
+        _, lineups, _ = fetch_match(cur, m)
+        gone = next(lu for lu in lineups if lu["player_id"] == pid)
+        assert (gone["display_name"], gone["nationality"]) == ("Withdrawn player", None)
+    conn.rollback()
+    conn.close()

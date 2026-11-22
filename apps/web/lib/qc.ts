@@ -33,7 +33,7 @@ export function ruleFlags(events: QcEvent[], periods: Period[], lineups: SheetLi
     if (periods.length) {
       const p = periods.find((q) => q.period === e.period);
       if (!p || e.video_seconds < p.start || e.video_seconds > p.end) {
-        flag("outside_playing_time", p ? `at ${fmt(e.video_seconds)}, outside period ${e.period} (${fmt(p.start)} to ${fmt(p.end)})` : `period ${e.period} was not played`);
+        flag("outside_playing_time", p ? `at ${clock(e.video_seconds)}, outside period ${e.period} (${clock(p.start)} to ${clock(p.end)})` : `period ${e.period} was not played`);
         continue;
       }
     }
@@ -52,7 +52,8 @@ export function ruleFlags(events: QcEvent[], periods: Period[], lineups: SheetLi
   return flags;
 }
 
-const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+/** Video seconds as m:ss. */
+export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 export type QcSettings = { countAgreement: number; locationTolerance: number; timeWindow: number };
 export type Sample = { period: number; start: number; end: number };
@@ -67,6 +68,12 @@ export type QcResult = {
  * the same player within `timeWindow` seconds, at a location within `locationTolerance` pitch units.
  * Agreement = agreeing events / the larger of the two counts, so a missed or an invented event both count against it.
  */
+/** Two paired events are near when both are located within `tolerance` pitch units, or neither is located. */
+export function near(a: Pick<QcEvent, "x" | "y">, b: Pick<QcEvent, "x" | "y">, tolerance: number): boolean {
+  const located = a.x != null && b.x != null && a.y != null && b.y != null;
+  return located ? Math.hypot(a.x! - b.x!, a.y! - b.y!) <= tolerance : a.x == null && b.x == null;
+}
+
 export function qualityCheck(primary: QcEvent[], review: QcEvent[], sample: Sample, s: QcSettings): QcResult {
   const inSample = (e: QcEvent) => e.period === sample.period && e.video_seconds >= sample.start && e.video_seconds <= sample.end;
   const a = primary.filter(inSample);
@@ -85,9 +92,7 @@ export function qualityCheck(primary: QcEvent[], review: QcEvent[], sample: Samp
     if (!match) continue;
     used.add(match.id);
     pairs.push([match.id, r.id]);
-    const located = match.x != null && r.x != null && match.y != null && r.y != null;
-    const near = located ? Math.hypot(match.x! - r.x!, match.y! - r.y!) <= s.locationTolerance : match.x == null && r.x == null;
-    if (near) { agreed += 1; bump(r.type, "agreed"); }
+    if (near(match, r, s.locationTolerance)) { agreed += 1; bump(r.type, "agreed"); }
   }
   const denominator = Math.max(a.length, b.length);
   const agreement = denominator ? agreed / denominator : 0;
@@ -105,10 +110,11 @@ export function checkOutcome(r: Pick<QcResult, "agreement" | "agreed" | "primary
 }
 
 /** Why the match cannot publish yet, or null. app.publish_match enforces the same rules. */
-export function publishBlocker(status: string, latest: { passed: boolean; flags: number } | undefined): string | null {
+export function publishBlocker(status: string, latest: { passed: boolean; flags: number; current: boolean } | undefined): string | null {
   if (status !== "review") return "The analyst must send the match to review from the event log first";
   if (!latest) return "Run the quality check first";
   if (!latest.passed) return "The latest quality check must pass before the match can publish";
   if (latest.flags > 0) return `Fix the ${plural(latest.flags, "rule flag")} in the event log, then run the quality check again`;
+  if (!latest.current) return "The events, lineups, sheet or periods changed after the latest check: run the quality check again";
   return null;
 }
