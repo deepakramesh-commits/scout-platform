@@ -105,17 +105,17 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
               <ActionButton matchId={id} kind="publish" label="Publish" variant="primary" isDisabled={blocker != null}
                 why={blocker ?? undefined} />
             </HStack>
-          ) : <Text type="supporting">The reviewer runs the check and publishes.</Text>}
+          ) : <Text type="supporting">The reviewer logs a sample of the match again, without telling you which part, then runs the check and publishes.</Text>}
         </VStack>
       </Card>
 
-      <Grid columns={{ minWidth: 420, repeat: "fit" }} gap={4} align="start">
+      {canAct && <Grid columns={{ minWidth: 420, max: 2, repeat: "fit" }} gap={4} align="start">
         <Card>
           <VStack gap={3}>
             <Heading level={2}>Sample window</Heading>
             <Text type="supporting">The reviewer logs this part of the video again in the <Link href={`/matches/${id}/log?mode=review`}>sample log</Link>. Default length {settings.sampleMinutes} minutes.</Text>
             {sample && <Text>Period {sample.period}, {clock(sample.start)} to {clock(sample.end)} in the video</Text>}
-            {canAct && match.status !== "published" && <SampleForm matchId={id} initial={defaultSample} periods={match.periods.map((p) => p.period)} />}
+            {match.status !== "published" && <SampleForm matchId={id} initial={defaultSample} periods={match.periods.map((p) => p.period)} />}
           </VStack>
         </Card>
         <Card padding={0}>
@@ -134,7 +134,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
             </Table>
           )}
         </Card>
-      </Grid>
+      </Grid>}
 
       {live && (unmatched.length > 0 || far.length > 0) && (
         <Card padding={0}>
@@ -184,7 +184,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
         )}
       </Card>
 
-      <Grid columns={{ minWidth: 420, repeat: "fit" }} gap={4} align="start">
+      <Grid columns={{ minWidth: 420, max: 2, repeat: "fit" }} gap={4} align="start">
         <Card padding={0}>
           <VStack gap={1} padding={4}>
             <Heading level={2}>Analyst accuracy</Heading>

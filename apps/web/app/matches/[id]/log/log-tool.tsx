@@ -224,7 +224,7 @@ export function LogTool(props: {
       {failed > 0 && <Banner status="error" title={`${failed} ${failed === 1 ? "event has" : "events have"} not saved`} description="They are marked below. A save without a connection is retried when it returns; use Retry for the others." />}
       {notice && <Banner status="info" title={notice} onDismiss={() => setNotice(null)} />}
 
-      <Grid columns={{ minWidth: 440, repeat: "fit" }} gap={4} align="start">
+      <Grid columns={{ minWidth: 440, max: 2, repeat: "fit" }} gap={4} align="start">
         <VStack gap={3}>
           {props.videoSrc ? (
             <video ref={video} className="match-video" src={props.videoSrc} controls preload="auto"
@@ -343,7 +343,7 @@ export function LogTool(props: {
         </Card>
       </Grid>
 
-      <Grid columns={{ minWidth: 440, repeat: "fit" }} gap={4} align="start">
+      <Grid columns={{ minWidth: 440, max: 2, repeat: "fit" }} gap={4} align="start">
         <Card padding={0}>
           <VStack gap={2} padding={4}>
             <HStack hAlign="between" vAlign="center" wrap="wrap" gap={2}>

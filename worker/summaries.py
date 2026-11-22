@@ -49,8 +49,14 @@ def ordinal(n: int) -> str:
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
+def article(code: str) -> str:
+    # position codes are read letter by letter, and these letters start with a vowel sound ("an AM", "an ST")
+    return "an" if code[:1] in "AEFHILMNORSX" else "a"
+
+
 def template_summary(f: dict) -> str:
-    out = [f"{f['name']} played {count(f['minutes'], 'minute')} in {count(f['matches'], 'match', 'matches')} at {f['competition']} as a {f['position']}."]
+    out = [f"{f['name']} played {count(f['minutes'], 'minute')} in {count(f['matches'], 'match', 'matches')} at {f['competition']} "
+           f"as {article(f['position'])} {f['position']}."]
     if f["standout_qualities"]:
         out.append(f"Standout qualities: {' and '.join(q.lower() for q in f['standout_qualities'])}.")
     if f["best_measures"]:

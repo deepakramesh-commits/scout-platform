@@ -465,8 +465,20 @@ def test_quality_check_data_is_read_only_on_assigned_matches_plus_the_analysts_o
     act_as(cur, key)
     assert one(cur, "select count(*) from review_events where match_id = %s", stranger) == review_events
     assert one(cur, "select count(*) from qc_runs where match_id = %s", stranger) == qc_runs
-    assert one(cur, "select count(*) from review_events where match_id = %s", did("match", "demo")) > 0
     assert one(cur, "select count(*) from qc_runs where match_id = %s", did("match", "demo")) > 0
+
+
+@pytest.mark.parametrize("key, sees", [("analyst", False), ("coordinator", False), ("analyst2", True), ("admin", True)])
+def test_the_sample_stays_blind_to_the_matchs_analyst(cur, key, sees):
+    m = did("match", "demo")
+    qc_rows(cur, m)
+    cur.execute("insert into qc_samples (match_id, period, start_seconds, end_seconds) values (%s, 1, 0, 60) on conflict do nothing", (m,))
+    act_as(cur, key)
+    assert (one(cur, "select count(*) from review_events where match_id = %s", m) > 0) == sees
+    assert (one(cur, "select count(*) from qc_samples where match_id = %s", m) > 0) == sees
+    assert one(cur, "select count(*) from qc_runs where match_id = %s", m) > 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cur.execute("select details from qc_runs where match_id = %s", (m,))
 
 
 @pytest.mark.parametrize("key, seen", [
@@ -635,6 +647,54 @@ def test_back_to_tagging_waits_for_a_publish_in_flight_and_then_refuses():
     finally:
         reviewer.close()
         analyst.close()
+        admin.execute("delete from jobs where kind = 'compute_match_metrics' and payload->>'match_id' = %s", (str(m),))
+        admin.execute("delete from qc_runs where id = %s", (run,))
+        admin.execute("update matches set status = %s where id = %s", (before, m))
+        admin.close()
+
+
+@pytest.mark.parametrize("change", INPUT_CHANGES)
+def test_a_change_racing_a_publish_cannot_land_in_the_published_match(change):
+    """Two sessions at once: the change passes its status check before publish commits, then waits on the match row."""
+    import threading
+    try:
+        admin = psycopg.connect(DB, autocommit=True, connect_timeout=2)
+    except psycopg.OperationalError:
+        pytest.skip("database not running")
+    m = did("match", "demo")
+    before = admin.execute("select status from matches where id = %s", (m,)).fetchone()[0]
+    admin.execute("update matches set status = 'review' where id = %s", (m,))
+    run = admin.execute("insert into qc_runs (match_id, primary_count, review_count, agreed, agreement, passed, flags, inputs_seen) "
+                        "select id, 6, 6, 6, 1, true, 0, inputs_changed_at from matches where id = %s returning id", (m,)).fetchone()[0]
+    team, player = admin.execute("select s.team_id, s.player_id from matches m join squad_members s on s.team_id = m.home_team_id "
+                                 "where m.id = %s and s.player_id not in (select player_id from lineups where match_id = m.id) limit 1",
+                                 (m,)).fetchone()
+    key, q = INPUT_CHANGES[change]
+    reviewer, writer = psycopg.connect(DB), psycopg.connect(DB)
+    outcome = {}
+    try:
+        act_as(reviewer.cursor(), "analyst2")
+        reviewer.execute("select app.publish_match(%s)", (m,))
+
+        def write():
+            try:
+                c = writer.cursor()
+                act_as(c, key)
+                c.execute(q, {"m": m, "team": team, "player": player})
+                outcome["rows"] = c.rowcount
+            except psycopg.Error as e:
+                outcome["error"] = str(e)
+            writer.rollback()
+        t = threading.Thread(target=write)
+        t.start()
+        t.join(1)
+        assert t.is_alive(), "the change should wait for the publish in flight"
+        reviewer.commit()
+        t.join(10)
+        assert "match is published" in outcome.get("error", f"changed {outcome.get('rows')} row(s) of the published match")
+    finally:
+        reviewer.close()
+        writer.close()
         admin.execute("delete from jobs where kind = 'compute_match_metrics' and payload->>'match_id' = %s", (str(m),))
         admin.execute("delete from qc_runs where id = %s", (run,))
         admin.execute("update matches set status = %s where id = %s", (before, m))

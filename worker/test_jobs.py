@@ -32,6 +32,13 @@ def test_template_summary_counts_read_as_english_for_one():
         assert f"({p} percentile)" in text
 
 
+@pytest.mark.parametrize("position, phrase", [("AM", "as an AM."), ("ST", "as an ST."), ("FB", "as an FB."), ("CB", "as a CB."), ("GK", "as a GK.")])
+def test_template_summary_reads_the_position_code_aloud_for_its_article(position, phrase):
+    f = {"name": "A", "competition": "Cup", "position": position, "minutes": 90, "matches": 1, "ranked_against": 20,
+         "standout_qualities": [], "birth_year": 2004, "birth_year_is_demo": True, "best_measures": [], "weakest_measures": []}
+    assert phrase in template_summary(f)
+
+
 @pytest.fixture
 def conn():
     try:
