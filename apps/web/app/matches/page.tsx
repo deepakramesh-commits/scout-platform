@@ -51,7 +51,7 @@ export default async function Matches() {
         {rows.length === 0 ? (
           <EmptyState title="No matches assigned to you" description="An admin assigns matches to coordinators and analysts. Ask yours to add you to the next one." />
         ) : (
-          <Table density="balanced">
+          <Table density="balanced" className="mtable">
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>Match</TableHeaderCell>

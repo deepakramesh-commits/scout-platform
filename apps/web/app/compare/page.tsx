@@ -76,11 +76,11 @@ async function ComparePage(tx: Q, { searchParams }: Props) {
     `/compare?${new URLSearchParams({ ...(a && { a: a.id, ca: a.competition_id }), ...(b && { b: b.id, cb: b.competition_id }), ...side })}`;
 
   const side = (s: NonNullable<typeof a>, key: "a" | "b") => (
-    <VStack gap={2} hAlign={key === "b" ? "end" : "start"}>
+    <VStack gap={2}>
       <ClickableCard className="lift" label={s.display_name} href={`/players/${s.id}?comp=${s.competition_id}`} variant="transparent" padding={2}>
-        <HStack gap={3} vAlign="center" hAlign={key === "b" ? "end" : "start"}>
-          {key === "a" && <PlayerAvatar name={s.display_name} photo={s.photo_url} size={72} />}
-          <VStack gap={0} hAlign={key === "b" ? "end" : "start"}>
+        <HStack gap={3} vAlign="center">
+          <PlayerAvatar name={s.display_name} photo={s.photo_url} size={72} />
+          <VStack gap={0}>
             <HStack gap={1} vAlign="center">
               <svg viewBox="0 0 10 10" className="dot" aria-hidden><circle cx="5" cy="5" r="5" fill={SERIES[key]} /></svg>
               <Heading level={2}>{s.display_name}</Heading>
@@ -88,7 +88,6 @@ async function ComparePage(tx: Q, { searchParams }: Props) {
             <Text color="secondary">{flag(s.team)} {s.team} · {ROLE_NAMES[s.role] ?? s.role} · {s.minutes} min</Text>
             <VerifiedMark verified={s.id_verified} />
           </VStack>
-          {key === "b" && <PlayerAvatar name={s.display_name} photo={s.photo_url} size={72} />}
         </HStack>
       </ClickableCard>
       <CompetitionSwitch current={s.competition_id} competitions={s.competitions} href={(c) => link(key === "a" ? { ca: c } : { cb: c })} />

@@ -13,3 +13,18 @@
 .log-pitch .start, .log-pitch .end { transform-box: fill-box; transform-origin: center; animation: mark-in 140ms var(--ease-out) backwards; }
 @keyframes mark-in { from { opacity: 0; transform: scale(0.5); } }
 @media (prefers-reduced-motion: reduce) { .log-pitch .start, .log-pitch .end { animation: none; } }
+
+/* Match list on a phone: each row becomes a card of match, status, progress and tool links, so no column is squeezed. */
+@media (max-width: 40rem) {
+  .mtable, .mtable tbody { display: block; }
+  .mtable thead { display: none; }
+  .mtable td { border: 0; width: auto; max-width: none; min-width: 0; justify-self: stretch; }
+  .mtable tr { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; border-bottom: var(--border-width) solid var(--color-border-emphasized); }
+  .mtable td:nth-child(3), .mtable td:nth-child(4) { grid-column: 1 / -1; }
+  .mtable td:nth-child(3) { padding-block: 0; }
+  .mtable td:nth-child(4) a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+}
+
+/* Long team names wrap inside the team switch instead of ending in an ellipsis. */
+.astryx-segmented-control[data-size="lg"] .astryx-segmented-control-item { height: auto; min-height: 3rem; }
+.astryx-segmented-control[data-size="lg"] .astryx-segmented-control-item * { white-space: normal; text-overflow: clip; overflow: visible; text-align: center; }
