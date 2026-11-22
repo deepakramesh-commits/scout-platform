@@ -37,7 +37,7 @@ async function exportFiles(matchId: string): Promise<string[]> {
 
 export default async function QcPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { match, tasks } = await loadTool(id, ["analyst", "reviewer"]);
+  const { user, match, tasks } = await loadTool(id, ["analyst", "reviewer"]);
   const canAct = tasks.has("reviewer");
   const data = await db(async (tx) => {
     const ev = (table: "events" | "review_events") => tx<QcEvent[]>`
@@ -187,7 +187,7 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
         <Card padding={0}>
           <VStack gap={1} padding={4}>
             <Heading level={2}>Analyst accuracy</Heading>
-            <Text type="supporting">Mean agreement over every quality check of each analyst&apos;s matches.</Text>
+            <Text type="supporting">{user.role === "admin" ? "Mean agreement over every quality check of each analyst's matches." : "Mean agreement over the quality checks of the matches you work on, and all of your own."}</Text>
           </VStack>
           {accuracy.length === 0 ? <VStack padding={4}><Text color="secondary">No checks have run yet.</Text></VStack> : (
             <Table density="compact">
@@ -208,7 +208,8 @@ export default async function QcPage({ params }: { params: Promise<{ id: string 
                 {files.map((f) => <Link key={f} href={`/api/export/${id}/${f}`}>{f}</Link>)}
               </VStack>
             ) : <Text color="secondary">No export yet.</Text>}
-            <ActionButton matchId={id} kind="export" label="Download StatsBomb JSON" />
+            {canAct ? <ActionButton matchId={id} kind="export" label="Download StatsBomb JSON" />
+              : <Text type="supporting">The reviewer exports the match.</Text>}
           </VStack>
         </Card>
       </Grid>

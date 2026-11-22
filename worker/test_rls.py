@@ -396,3 +396,70 @@ def test_nobody_else_queues_an_export(cur, key):
     act_as(cur, key)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         cur.execute("select app.request_export(%s)", (did("match", "demo"),))
+
+
+@pytest.mark.parametrize("key", ["analyst", "analyst2"])
+def test_a_tagger_sees_only_the_squads_of_his_assigned_matches_never_withdrawn(cur, key):
+    me = did("user", key)
+    cur.execute("""select distinct unnest(array[m.home_team_id, m.away_team_id]) from match_assignments a
+                   join matches m on m.id = a.match_id where a.user_id = %s""", (me,))
+    teams = {r[0] for r in cur.fetchall()}
+    cur.execute("select distinct player_id from squad_members where team_id = any(%s)", (list(teams),))
+    squad = {r[0] for r in cur.fetchall()}
+    cur.execute("select id from players where academy_org_id = (select org_id from app_users where id = %s)", (me,))
+    academy = {r[0] for r in cur.fetchall()}
+    gone = next(iter(squad - academy))
+    pending = one(cur, "select id from players where status = 'pending_approval' and id <> all(%s) limit 1", list(squad | academy))
+    cur.execute("update players set status = 'withdrawn' where id = %s", (gone,))
+    act_as(cur, key)
+    cur.execute("select id from players")
+    assert {r[0] for r in cur.fetchall()} == (squad | academy) - {gone}
+    assert not one(cur, "select app.sees_player(%s)", gone)
+    assert not one(cur, "select app.sees_player(%s)", pending)
+    cur.execute("select distinct team_id from squad_members")
+    assert {r[0] for r in cur.fetchall()} == teams
+
+
+def qc_rows(cur, m):
+    """A review event, a QC run of nobody's, and a QC run credited to the analyst, all on match `m`."""
+    cur.execute("reset role")
+    team = one(cur, "select home_team_id from matches where id = %s", m)
+    cur.execute("insert into review_events (match_id, team_id, period, video_seconds, type, source) values (%s, %s, 1, 0, 'pass', 'manual')", (m, team))
+    cur.execute("insert into qc_runs (match_id, analyst_id, primary_count, review_count, agreed, agreement, passed, flags) "
+                "values (%s, null, 1, 1, 1, 1, true, 0), (%s, %s, 1, 1, 1, 1, true, 0)", (m, m, did("user", "analyst")))
+
+
+@pytest.mark.parametrize("key, review_events, qc_runs", [
+    ("analyst", 0, 1),
+    ("analyst2", 0, 0),
+    ("coordinator", 0, 0),
+    ("admin", 1, 2),
+])
+def test_quality_check_data_is_read_only_on_assigned_matches_plus_the_analysts_own_runs(cur, key, review_events, qc_runs):
+    stranger = stranger_match(cur)
+    qc_rows(cur, stranger)
+    qc_rows(cur, did("match", "demo"))
+    act_as(cur, key)
+    assert one(cur, "select count(*) from review_events where match_id = %s", stranger) == review_events
+    assert one(cur, "select count(*) from qc_runs where match_id = %s", stranger) == qc_runs
+    assert one(cur, "select count(*) from review_events where match_id = %s", did("match", "demo")) > 0
+    assert one(cur, "select count(*) from qc_runs where match_id = %s", did("match", "demo")) > 0
+
+
+@pytest.mark.parametrize("key, seen", [
+    ("analyst", set()),
+    ("coordinator", set()),
+    ("scout", set()),
+    ("analyst2", {"export_match"}),
+    ("admin", {"export_match", "write_report"}),
+])
+def test_jobs_are_read_by_admins_and_by_the_reviewer_for_his_exports(cur, key, seen):
+    cur.execute("delete from jobs")
+    cur.execute("insert into jobs (kind, payload) values ('export_match', %s), ('export_match', %s), ('write_report', '{}')",
+                (json.dumps({"match_id": str(did("match", "demo"))}), json.dumps({"match_id": str(stranger_match(cur))})))
+    act_as(cur, key)
+    cur.execute("select kind, payload->>'match_id' from jobs")
+    rows = cur.fetchall()
+    assert {k for k, _ in rows} == seen
+    if key != "admin":
+        assert all(m == str(did("match", "demo")) for _, m in rows)
