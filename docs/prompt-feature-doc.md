@@ -1,7 +1,7 @@
 # Prompt: the Scout overview document for a partner
 
-Paste everything below the line into a new Claude Code session opened in the `scout-platform` folder. Run it
-after `BUILD_PROMPT_2.md` has been built, so the document matches what partners will see.
+Paste everything below the line into a new Claude Code session opened in the `scout-platform` folder. It can run
+at the same time as the `BUILD_PROMPT_2.md` build session: it treats that build as already done.
 
 ---
 
@@ -15,10 +15,10 @@ tables. No code, file names or database terms. Explain football-data words the f
 
 **Read these first, and take every fact from them, not from memory:**
 1. `README.md`, and the final report at the end of `docs/build-log.md`: what is built today.
-2. `docs/todo.md`, `BUILD_PROMPT_2.md` and the phase 6 to 9 reports in `docs/build-log.md`: the features added
-   after phase 5, with the decisions made. **Describe all of them as part of the product.** Check each one
-   against the build log and the code. If one is not built yet, still describe it, but list it for me at the end
-   so I do not send the document before it exists.
+2. `BUILD_PROMPT_2.md` and the decisions in `docs/todo.md`: the features added after phase 5. **Assume all of
+   them are built, and describe them as part of the product.** Another session is building them right now, so
+   take their details from these two files, not from the code or the build log, and do not check whether they
+   exist yet. If the build session has already changed some code, ignore that for these features.
 3. `docs/standards/filming.md`, `match-sheet.md`, `event-definitions.md`, `quality-check.md`, `verification.md`:
    the rules for filming, the match sheet, logging and checking.
 4. `docs/import-csv.md`, `apps/web/lib/event-spec.ts` (the event types and outcomes), `worker/metrics.py` (the
@@ -26,8 +26,9 @@ tables. No code, file names or database terms. Explain football-data words the f
    for the quality check (90% agreement, 3 seconds, 10 pitch units, 15-minute sample).
 5. `docs/technical-plan.md` and `docs/business-plan.pdf`: the product, users and revenue.
 6. The data-requirements sheet I already have: https://claude.ai/artifact/VbYXTaqK83SrXyXKUE9xGH (read it with
-   the Artifact tool). Reuse its content. Do not contradict it. Where the code says something different, the code
-   wins, and you tell me what differed.
+   the Artifact tool). Reuse its content. Do not contradict it. For today's features, where the code says
+   something different, the code wins, and you tell me what differed. For the new features, `BUILD_PROMPT_2.md`
+   wins.
 
 **Sections, in this order:**
 
@@ -71,7 +72,8 @@ tables. No code, file names or database terms. Explain football-data words the f
    and what is better.
 10. **Try it.** The demo site https://scout-fodc.onrender.com with only the scout login (`scout@demo.scout`,
     password `scout-demo`). Say that the free site sleeps when idle and takes about a minute to wake, and that
-    the data there is AFCON test data plus labelled demo values.
+    the data there is AFCON test data plus labelled demo values. Note that the demo site shows the current
+    version until the new build is deployed, so clubs, squads and invites will not appear there yet.
 
 **Rules:**
 - Never recommend a competitor's product. Hudl, Wyscout, Sportscode and Hudl cameras are competitors. For
@@ -79,5 +81,8 @@ tables. No code, file names or database terms. Explain football-data words the f
   from those companies.
 - Every number comes from the files above. If you cannot find one, say "to be confirmed".
 - Keep it readable in about 15 minutes. Put detailed tables in an appendix if a section gets long.
+- Do not edit, create or commit any file in this repository. Another session is working in it. Your only
+  output is the Claude doc.
 - When done, give me the link, a five-line summary of what is in it, anything in the sources that contradicted
-  each other, and every feature described that the build log or code shows is not built yet.
+  each other, and a list of every feature you described from `BUILD_PROMPT_2.md`, so I can check each one is
+  live before I send the document.
