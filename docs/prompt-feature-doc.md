@@ -1,6 +1,7 @@
 # Prompt: the Scout overview document for a partner
 
-Paste everything below the line into a new Claude Code session opened in the `scout-platform` folder.
+Paste everything below the line into a new Claude Code session opened in the `scout-platform` folder. Run it
+after `BUILD_PROMPT_2.md` has been built, so the document matches what partners will see.
 
 ---
 
@@ -14,7 +15,10 @@ tables. No code, file names or database terms. Explain football-data words the f
 
 **Read these first, and take every fact from them, not from memory:**
 1. `README.md`, and the final report at the end of `docs/build-log.md`: what is built today.
-2. `docs/todo.md` and `BUILD_PROMPT_2.md`: what is being built next, with the decisions already made.
+2. `docs/todo.md`, `BUILD_PROMPT_2.md` and the phase 6 to 9 reports in `docs/build-log.md`: the features added
+   after phase 5, with the decisions made. **Describe all of them as part of the product.** Check each one
+   against the build log and the code. If one is not built yet, still describe it, but list it for me at the end
+   so I do not send the document before it exists.
 3. `docs/standards/filming.md`, `match-sheet.md`, `event-definitions.md`, `quality-check.md`, `verification.md`:
    the rules for filming, the match sheet, logging and checking.
 4. `docs/import-csv.md`, `apps/web/lib/event-spec.ts` (the event types and outcomes), `worker/metrics.py` (the
@@ -31,11 +35,13 @@ tables. No code, file names or database terms. Explain football-data words the f
 2. **How it works, start to finish.** One simple flow: a club films a match, the coordinator sends the match sheet
    and video, an analyst logs it, a second analyst checks a sample, and the match is published. Then the numbers
    reach scouts, agents and federations.
-3. **The roles.** One short part each for club staff (scout, coach and coordinator, under the new one-club
-   model), agent, federation, analyst, player, guardian and admin: who they are, what they want, what they can do
-   today, and what is coming. Mark every planned feature **Coming soon**.
-4. **Features: today and coming soon.** One table grouped by area (finding players, judging players, workflow,
-   accounts and trust, the data engine, clubs and squads, duplicates). Have a status column: Live or Coming soon.
+3. **The roles.** One short part each for club staff (scout, coach and coordinator, in the one-club model where
+   any club both scouts and manages its own players), agent, federation, analyst, player, guardian and admin:
+   who they are, what they want, and what they can do. Include how staff join their club by invite, how a new
+   club is approved, how a club adds its players, and who decides whether other clubs can see a player.
+4. **Features.** One table grouped by area: finding players, judging players, workflow, accounts and trust,
+   clubs and squads, duplicates and claims, agents, federations, and the data engine. Leave out a status column:
+   everything is described as available.
 5. **The data we need from a club.** Say clearly that AFCON 2023 was free test data, and that real clubs are
    where the real data comes from. Then give tables:
    - **For each match:** the video (the filming standard in plain words: camera position, height, what must stay
@@ -46,7 +52,9 @@ tables. No code, file names or database terms. Explain football-data words the f
      guardian for under-18s, and consent. Mark each one required or optional, and say who provides it (club,
      player, guardian or federation).
    - **Physical tests:** each test, how to run it simply at a club, the unit and the normal range.
-   - **For the club:** the squad list, staff contacts, and who signs the consent forms.
+   - **For the club:** the squad list, staff contacts, and who signs the consent forms. Explain that the club
+     enters its own squad and players in Scout, that each player confirms the link when they join, and that no
+     player is shown to other clubs without consent.
 6. **SOP for a club.** A step-by-step checklist a club with no data experience can follow: before the season
    (squad list, consent forms, ID copies, physical tests), before each match (camera, battery, storage, position),
    on match day (filming, match sheet on a phone), and after the match (upload the video within a set time).
@@ -71,5 +79,5 @@ tables. No code, file names or database terms. Explain football-data words the f
   from those companies.
 - Every number comes from the files above. If you cannot find one, say "to be confirmed".
 - Keep it readable in about 15 minutes. Put detailed tables in an appendix if a section gets long.
-- When done, give me the link and a five-line summary of what is in it, plus anything in the sources that
-  contradicted each other.
+- When done, give me the link, a five-line summary of what is in it, anything in the sources that contradicted
+  each other, and every feature described that the build log or code shows is not built yet.

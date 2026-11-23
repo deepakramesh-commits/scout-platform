@@ -19,8 +19,14 @@ and keep going.
 
 ## 1. Where the code is today
 
-- HEAD is `eb6de11` or later, on `main`, pushed to a private GitHub repository. pytest 107, `npm test` 111,
-  Playwright 13 of 13, `npm run build` and `npx astryx doctor` pass.
+- HEAD is `79f9e50` or later, on `main`, pushed to a private GitHub repository. pytest collects 109 tests,
+  `npm test` passes, Playwright 13 of 13, and `npm run build` and `npx astryx doctor` pass. Run them all once
+  before you change anything, and record the baseline.
+- **New migrations must be added in three places:** `supabase/migrations/`, a mount line in `docker-compose.yml`
+  (each file is mounted by name, in order), and therefore `scripts/check-fresh-db.sh`, which reads those mounts.
+  `scripts/migrate.sh` applies any file not yet in `ops.schema_migrations`.
+- `unaccent`, `pg_trgm` and `fuzzystrmatch` are available in the local `pgvector/pgvector:pg16` image. On Render a
+  non-superuser can create trusted extensions. Check that each one you use is trusted before you rely on it there.
 - A staging copy runs on Render (free plan) at https://scout-fodc.onrender.com with AFCON 2023 and the full
   `seed_demo.py` data. `scripts/start.sh` runs `scripts/migrate.sh` on every start, so **every new migration will
   run against that live database on the next deploy**. Write each migration to be safe on existing data, and test
@@ -30,8 +36,28 @@ and keep going.
     clubs exist only as `teams` rows, linked to an organisation by `teams.org_id`. In the demo that organisation is
     an `academy`.
   - `players.academy_org_id` gives an academy "ownership" through `app.owns_player()`. Only `seed_demo.py` sets it.
-  - `players.visible_to_scouts`, `players.status` (`live`, `pending_approval`, `declined`, `withdrawn`) and the
-    `app_age_rule` trigger decide who is shown. Under-18s wait for admin approval.
+  - `players.status` (`live`, `pending_approval`, `declined`, `withdrawn`) decides who is shown.
+    `players.visible_to_scouts` is a **generated column** (`status = 'live'`, phase 4 migration line 5) and cannot be
+    written. The new "Show to other clubs" switch needs its own column, and the one definition of "visible" must
+    then combine both.
+  - The `app_age_rule` trigger treats a player as under 18 by **birth year only** (`year(now) - birth_year`). Use
+    `player_identity.date_of_birth` wherever it is known, for the age rule, the 18th-birthday handover and the demo.
+  - **Any scouting role sees every visible player**, whatever its coverage (`app.sees_player`, staff_reads
+    migration). Coverage limits only competitions, matches and the metrics computed from them.
+  - **`app.owns_player()` is used by about 25 policies**, including reading `player_identity`, updating `players`,
+    and setting `consents.revoked_at`, which withdraws the player and queues `delete_personal_data`. It means "this
+    is me or my child". Do not extend it to clubs.
+  - `app.federation_players()` already includes every `squad_members` row of teams in competitions the federation
+    owns, as well as line-ups.
+  - Any scouting role can read every `squad_members` row (`covered` policy), and `lineups` has no player-visibility
+    filter. Both would expose hidden club players once clubs add them.
+  - Postgres functions are executable by `PUBLIC` by default, and no migration revokes it. The sign-up claim search
+    (`app/signup/actions.ts`) runs without a login.
+  - The registration number is `verifications.federation_registration`, one row per player. `seed_demo.py` fills it
+    with random `FED-xxxxx` values, which can collide.
+  - Each user has a single `app_users.org_id`.
+  - `worker/test_rls.py` **skips itself** when the database is down or the demo seed is missing, so a run can look
+    green with no security test run.
   - `squad_members(team_id, player_id, shirt_number)`. The match sheet only picks from it
     (`lib/match-sheet.ts validateSheet`). Row-level security already lets a coordinator write the squads of teams
     in their assigned matches (`app.coordinated_teams()`), but no screen writes it.
@@ -44,6 +70,9 @@ and keep going.
   - Private files: ID documents upload through `app/verify/id-document/route.ts` and only admins can open them.
     Reuse that path for agent proof documents.
   - Menus: `apps/web/lib/nav.ts`. Sign-up types: `apps/web/lib/signup.ts` (`ACCOUNT_TYPES`).
+  - **Every staff sign-up creates a new organisation** (`apps/web/lib/auth.ts signUp`: `insert into orgs` from the
+    typed name). Nobody can join an existing organisation, and organisation names are not checked or unique.
+    Scout-type sign-ups are active at once. Coordinators and analysts wait for an admin.
   - Demo data: `worker/seed_demo.py` uses deterministic ids (`did(...)`), labels everything `is_demo`, and
     `--remove` deletes it all.
 
@@ -55,16 +84,26 @@ service required, and search, profile and compare keep working through every pha
 
 1. **Consent before exposure.** No player is shown to another organisation without consent: from the player, the
    guardian for an under-18, or the club's recorded consent tick for a player with no account. Under-18s still
-   wait for admin approval, whoever created them.
-2. **Hidden means hidden.** A profile that is not visible to other clubs must not leak through any search,
-   likely-match check, claim screen, count or error message. A likely-match result shown to someone who cannot
-   see the profile shows only the club's name and "a player with this name and birth date is listed".
+   wait for admin approval, whoever created them. One exception: the federation that owns a competition may see
+   and verify a hidden, unconsented player on a squad in that competition, because it is the official registration
+   body. Nobody else outside the club may.
+2. **Hidden means hidden.** A profile that is not visible to other clubs must not leak through any surface:
+   search, find by role, similar players, compare, team and competition pages, the printed report and share link,
+   playlists, exports, inbox, squad lists (`squad_members`), line-ups, likely-match checks, claim screens, counts
+   or error messages. A player who withdrew
+   consent stays hidden, and no club can turn their visibility back on. A likely-match result shown to someone who cannot
+   see the profile shows only the club's name and "a player with this name and birth date is listed", and only on
+   an **exact** date-of-birth match, so nobody can probe for hidden players (children above all) by name. Revoke
+   `execute` from `public` and `anon` on every new function, and on `app.claimable_players`.
 3. **Match stats belong to the match.** Leaving a club, merging profiles or withdrawing from a squad never deletes
    or changes events, line-ups or computed metrics, except that a merge moves them to the surviving profile.
 4. **Every new rule is enforced in the database** (policy, grant or security-definer function), not only in the
    screen. Add a test in `worker/test_rls.py` for each.
 5. **Do not deploy and do not touch the Render database.** The owner deploys.
 6. **In-app notifications only.** No email or SMS service.
+7. **A failed migration takes the live site down**, because `scripts/start.sh` runs `migrate.sh` under `set -e`.
+   Every migration states its backfill of existing rows. Every new unique constraint first checks for existing
+   duplicates and stops with a message that says which rows to fix.
 
 ## 3. Skills to use
 
@@ -85,23 +124,54 @@ The decisions are in `docs/todo.md` under "Clubs and their players". Build:
 
 1. **One Club type.** Merge `academy` into `club` in a migration that converts existing rows. Every club gets the
    scouting tools and its own squad tools. Sign-up offers "Club or academy" staff types (scout, coach,
-   coordinator) under one organisation kind. What a club sees of other players is still decided by coverage. A
-   club always sees its own players.
-2. **Club membership.** A table of player and club with a status: `added` (by the club), `confirmed`,
+   coordinator) under one organisation kind. Coverage still decides which competitions, matches and metrics a
+   club sees, and every scouting role still sees every visible player (section 1). A club always sees its own
+   players, hidden or not.
+2. **Joining a club and approving new clubs.**
+   - Club staff invite colleagues with a link (single use, expires after 14 days, revocable) that they copy and
+     send themselves, because Scout sends no email (rule 6). An invite can name an email address: only that
+     address can use it, and if that person already has an account it shows in their "Needs you" list. Signing up
+     through an invite puts the new user in that club. Coordinators and analysts still wait for an admin.
+   - **An existing user can accept an invite and move.** Their old organisation keeps everything they wrote there
+     (reports, shortlists, saved searches, profiles), and they lose access to it. The invite sets their role, which
+     must suit the new organisation's kind: an agent invited to a club becomes club staff.
+   - A sign-up without an invite creates a new club, which can scout at once but **cannot add players or show
+     them to other clubs until a Scout admin approves the club**. Approval sits in the admin's Approvals screen.
+     The migration marks every existing organisation approved.
+   - An admin tool merges two duplicate organisations, **of the same kind only**. Move every row that points to
+     the merged organisation, found from the catalogue, not a hand list. That includes staff, teams, memberships,
+     coverage, scout reports, requirement profiles, shortlists, agent clients, profile shares (both ends),
+     introduction requests and report links. A share link must still open after a merge.
+   - Build a minimal "Needs you" list in this phase, for invites and club approvals. Phase 8 extends it.
+   - Apply the same invite flow to agencies and federations, so colleagues can join them too.
+3. **Club membership.** A table of player and club with a status: `added` (by the club), `confirmed`,
    `rejected`, `left`, and who did each step and when. The player, or the guardian for an under-18, confirms or
-   rejects. Membership replaces `players.academy_org_id`: `app.owns_player()` (or its replacement) grants a club's
-   staff the coach rights only for confirmed members, and for added members who have no account.
-3. **Squad screen** for club staff (any staff role at the club): the club's teams, and for each team its squad.
-   Add a player (name, date of birth, position, nationality, shirt number), edit, remove from the squad, remove
-   from the club. Adding runs the likely-match check from phase 7 once it exists. Build the hook now and wire it in
-   phase 7. This screen is the source of the match sheet's squad list.
-4. **Visibility switch** for each player, "Show to other clubs". The club holds it while the player has no
+   rejects. Membership replaces `players.academy_org_id`. Give club staff their rights through a **new function**
+   (for example `app.club_manages(pid)`), true for confirmed members and for added members with no account, and
+   list each policy that uses it. Club staff may edit details and market facts, add tests, manage squads, and hold
+   the visibility switch while the player has no account. They may **never** read `player_identity`, write
+   `consents` or withdraw a player. The migration turns each existing `academy_org_id` link into a confirmed
+   membership, then drops the column.
+   - A player can belong to **several clubs at once**, such as a club and its academy, or a loan. One membership
+     is the **current club**: the player or guardian chooses it, or, for a player with no account, it is the most
+     recent club. Profiles and search show the current club.
+   - **Removing a player:** if a club removes a player it created, and the player has no account, no match data
+     and no other club, delete the profile and its personal data. Otherwise only the membership ends.
+4. **Teams and squad screen** for club staff (any staff role at an approved club). The club creates its own
+   teams (for example "First team" and "U20"), and each team has its squad. Add a player (name, date of birth,
+   position, nationality, shirt number), edit, remove from the squad, remove from the club. Adding runs the
+   likely-match check from phase 7 once it exists. Build the hook now and wire it in phase 7. This screen is the
+   source of the match sheet's squad list. Narrow the existing coordinator squad write (`app.coordinated_teams()`):
+   a coordinator writes the squad of their own club's teams, and of an opponent team only when that team belongs
+   to no club on Scout.
+5. **Visibility switch** for each player, "Show to other clubs" (a new column, section 1). The club holds it while the player has no
    account. Once a player or guardian account is linked, only they hold it. Turning it on for a player with no
-   account requires the consent tick (rule 1), and stores who ticked it and when. Under-18s go to admin approval.
-5. **The player's side.** On the Account page: the clubs that list them, with Confirm, Reject and Leave this
+   account requires the consent tick (rule 1), and stores who ticked it and when. For an under-18, the tick also
+   records the guardian's name and contact, and the profile goes to admin approval.
+6. **The player's side.** On the Account page: the clubs that list them, with Confirm, Reject and Leave this
    club, plus "View my profile" and "Edit my details" links (the `/players/[id]/market` gap).
-6. **"My players"** for club staff: confirmed and added members, with status and visibility.
-7. **Menus:** add "Squad" and "My players" for club staff, and "Matches" for analysts, coordinators and admins
+7. **"My players"** for club staff: confirmed and added members, with status and visibility.
+8. **Menus:** add "Squad" and "My players" for club staff, and "Matches" for analysts, coordinators and admins
    (`lib/nav.ts`).
 
 ### Phase 7: duplicates, claims and merging
@@ -109,7 +179,8 @@ The decisions are in `docs/todo.md` under "Clubs and their players". Build:
 The decisions are in `docs/todo.md` under "Duplicate players". Build:
 
 1. **Likely-match search** in the database: `unaccent` and `pg_trgm` name similarity, plus the same birth date
-   or year, plus nationality. It returns a score and a reason. Unit-test it with real African name variants
+   or year, plus nationality. For callers who cannot see a hidden profile, it returns that profile only on an
+   exact date-of-birth match (rule 2). It returns a score and a reason. Unit-test it with real African name variants
    (Ismaila and Ismaïla, Mohamed and Mohammed, Kofi Mensah and Mensah Kofi, Nana Yaw and Yaw).
 2. **Use it in three places:** the club's add-player form, player and guardian sign-up (replacing
    `app.claimable_players`), and an admin "Possible duplicates" list.
@@ -117,17 +188,25 @@ The decisions are in `docs/todo.md` under "Duplicate players". Build:
 4. **Claims on club-created profiles.** At sign-up: "<club> has listed you. Is this you?", with the minimal
    details from rule 2. The club approves. The admin can decide if the club has not answered within 14 days, or
    if either side disputes it. Claims on match-data profiles stay admin-approved, as today.
-5. **Admin merge tool.** Pick two profiles, see them side by side, choose the surviving one. Events, line-ups,
-   metrics, squads, memberships, tests, market details, agent links, claims, verification, consents and profile
-   views move to it, then the other is removed. Run it in one transaction, and record it in an audit table. Write
-   tests that merge two seeded profiles and check that nothing is lost and no other player changes.
-6. **Unique federation registration number** across profiles. A duplicate is refused with a message naming the
-   problem, not the other player.
+5. **Admin merge tool.** Pick two profiles, see them side by side, choose the surviving one.
+   - Move every row that points to the merged profile, found from the catalogue's foreign keys, not a hand list.
+     That covers events, line-ups, metrics, squads, memberships, tests, market details, agent links, claims,
+     verification, consents, profile views, shortlists, scout reports, report links, profile shares, introduction
+     requests, playlist items, match-sheet entries and summaries.
+   - On a one-row-per-player table (`player_identity`, `verifications`, `player_market`), and on a key collision
+     (`lineups`, `squad_members`, `player_season_metrics`), the surviving profile's row wins.
+   - Recompute the metrics afterwards. If either profile withdrew consent, the survivor is withdrawn. Refuse a
+     demo survivor when the other profile is real, so `seed_demo.py --remove` can never delete real data.
+   - Run it in one transaction, and record it in an audit table. Write tests that merge two seeded profiles and
+     check that nothing is lost and no other player changes.
+6. **Unique registration number:** a unique index on `verifications.federation_registration`, where it is not
+   empty. The migration first checks for duplicates (rule 7), and `seed_demo.py` stops making random ones that
+   can collide. A duplicate is refused with a message naming the problem, not the other player.
 
 ### Phase 8: players, guardians, agents and federations
 
-1. **Handover at 18.** When a guardian-held player turns 18 (by date of birth), the player can claim the
-   profile. The guardian approves, or the admin if the guardian has not answered within 14 days. On approval the
+1. **Handover at 18.** When a guardian-held player turns 18 (by `player_identity.date_of_birth`), the player can
+   claim the profile. **A Scout admin approves** the handover, as with today's profile claims. On approval the
    guardian's control ends. Show the guardian and the player what is happening.
 2. **A guardian adds another child** from the Account page, with the same form and rules as sign-up, including
    the likely-match check and admin approval.
@@ -136,8 +215,10 @@ The decisions are in `docs/todo.md` under "Duplicate players". Build:
 4. **Proof of representation.** An agency can upload its agent licence, and a representation contract for each
    client, as private files that only admins open (reuse the ID-document storage). When a player has no account,
    only an admin confirms the agent, and only with a contract on file. When the player or guardian confirms,
-   the upload is optional.
+   the upload is optional. Record each upload in the database. On Render's free plan the files themselves are
+   lost on restart, so say so in the deploy notes.
 5. **In-app notifications.** A "Needs you" list and a count in the header, built from the existing tables, for:
+   - an invite to join a club, agency or federation, and a new club waiting for approval (admin)
    - an agent asking to represent you (player or guardian)
    - a club saying you play for it (player or guardian)
    - a claim on your club's player (club staff)
@@ -145,8 +226,10 @@ The decisions are in `docs/todo.md` under "Duplicate players". Build:
    - possible duplicates, claims, approvals and agent confirmations waiting (admin)
    - your approval or claim decided (player or guardian)
 6. **Federations.**
-   - **Upload an official registration list** (CSV) for a team in a competition it owns. Each row creates or
-     links a player through the likely-match check, adds them to the squad, and records the registration number.
+   - **Upload an official registration list** (CSV) for a team in a competition it owns. Nobody confirms each
+     row, so link a row to an existing player **only** on the same registration number, or an exact name plus
+     date of birth. Otherwise create a new player and flag the row as a possible duplicate. Add each to the squad
+     and record the registration number.
      Players it creates follow rule 1 and stay hidden until consent. Document the CSV layout next to
      `docs/import-csv.md`.
    - **Verify sign-up players** who are members of a club whose team plays in a competition the federation owns,
@@ -154,8 +237,8 @@ The decisions are in `docs/todo.md` under "Duplicate players". Build:
 
 ### Phase 9: data engine setup
 
-1. **Create competitions, teams and matches.** The admin creates any of them. A federation creates matches in
-   competitions it owns. A team links to a club. A new competition gets coverage through the existing Coverage
+1. **Create competitions, teams and matches.** The admin creates any of them, including a team for any club.
+   Clubs already create their own teams (phase 6). A federation creates matches in competitions it owns. A new competition gets coverage through the existing Coverage
    screen.
 2. **Assign staff to a match:** coordinator, analyst and reviewer, from active staff accounts. Assignment changes
    show on the staff member's `/matches` list at once.
@@ -173,6 +256,8 @@ Extend `seed_demo.py` so every new screen has content, all labelled `is_demo` an
 - a guardian with two children, one of them 17 years and 11 months old
 - an agent with a contract on file and one without
 - a federation registration list already imported for one demo team
+- a player in two clubs with one marked current, a pending invite, and a new club waiting for admin approval
+- every existing demo login keeps working, and the README's demo login table is updated
 
 ## 6. Working rules for this run
 
@@ -190,7 +275,11 @@ These come from problems in the last run:
 `BUILD_PROMPT.md` section 6, plus:
 - every migration applies to an empty database and to a database seeded with AFCON and `seed_demo.py`
 - every item in `docs/todo.md` is ticked, or left open with the reason in the build log
-- a new test in `worker/test_rls.py` for each new rule in section 2, and the existing tests still pass
+- a new test in `worker/test_rls.py` for each new rule in section 2, and the existing tests still pass, with
+  **zero skipped** (start the database and load the seed first)
+- each new migration is mounted in `docker-compose.yml`, and `scripts/check-fresh-db.sh` passes
+- `README.md` (demo logins, layout), `docs/standards/verification.md` and `docs/standards/match-sheet.md` describe
+  the new flows, and a CSV layout for federation registration lists sits next to `docs/import-csv.md`
 
 ## 8. When you finish
 

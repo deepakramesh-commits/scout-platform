@@ -23,7 +23,23 @@ Today no club can add players, and African clubs exist only as team names. Decis
 - **Leaving:** a player can remove themselves from a club, and a club can remove a player. Match stats stay, because
   they belong to the matches played.
 
+- **Joining a club:** today every sign-up creates a new organisation (`lib/auth.ts signUp`), so two scouts from
+  one club end up in two clubs. Club staff invite colleagues with a link they send themselves (Scout sends no email), and
+  the invite puts them in the same club. A sign-up without an invite creates a new club.
+- **New clubs are checked:** a new club can scout straight away, but cannot add players or show them to other
+  clubs until a Scout admin approves it. The admin can merge two duplicate clubs.
+- **Removing a player:** if a club removes a player it created, who has no account, no match data and no other
+  club, the profile and its personal data are deleted. Otherwise the profile stays.
+- **More than one club:** a player can belong to several clubs at once (a club and its academy, a loan). One is
+  marked the current club: chosen by the player or guardian, or, for a player with no account, the most recent club.
+- **An existing user invited to another organisation** can accept and move. The old organisation keeps what they
+  wrote there, and they lose access to it.
+- **Federations see hidden club players** on squads in competitions they own, and may verify them before consent.
+  Nobody else outside the club sees them.
+
 To build:
+- [ ] Club invite links, and admin approval of new clubs before they manage squads, with an admin
+      tool to merge duplicate clubs.
 - [ ] Merge the `club` and `academy` organisation kinds into one Club type with scouting and squad tools, and update
       the sign-up types, menus (`apps/web/lib/nav.ts`) and row-level security to match.
 - [ ] A squad screen for the club: add a player (name, date of birth, position, shirt number), edit, remove.
@@ -74,7 +90,8 @@ covers the coach.
       database lets a player edit height, foot, contract, availability and add tests, but the only way in is
       typing the URL. Add "View my profile" and "Edit my details" links.
 - [ ] Nothing happens when a child turns 18. The guardian keeps control and the player cannot take over. Add a
-      handover: at 18 the player signs up or claims the profile and the guardian's control ends.
+      handover: at 18 (by date of birth) the player claims the profile, a Scout admin approves, and the guardian's
+      control ends. (Decided 2026-11-23: admin approves.)
 - [ ] A guardian adds a child only at sign-up. A guardian with two children cannot add the second one later.
 
 ## Data engine setup
